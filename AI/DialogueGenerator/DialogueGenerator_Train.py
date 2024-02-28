@@ -4,4 +4,4 @@ from DialogueGenerator import DialogueGenerator
 dialogue_generator = DialogueGenerator()
 
 # Train and save the model
-dialogue_generator.train_and_save_model()
+dialogue_generator.create_train_and_save_model()

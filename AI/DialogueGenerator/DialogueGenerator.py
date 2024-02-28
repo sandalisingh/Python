@@ -3,22 +3,20 @@ import numpy as np
 import tensorflow as tf
 from enum import Enum
 from States import EmotionStates
+from tf.keras.layers import Input, Embedding, Concatenate, Attention, MultiHeadAttention, LSTM, Dense
 
 class DialogueGenerator:
 
     def __init__(self):
-        # Define constants
         MAX_SEQ_LENGTH = 50  # Maximum sequence length for input and output
         VOCAB_SIZE = 10000   # Vocabulary size
         EMBEDDING_DIM = 300  # Embedding dimension
         HIDDEN_DIM = 512     # Hidden dimension for LSTM layers
         EMOTION_SIZE = 1
 
-    # Function to display top 5 rows of the dataset
     def display_top_rows(self, df):
         print("Top 5 rows of the dataset:\n%s", df.head())
             
-    # Preprocess data
     def preprocess_data(self, chat_text, text_response, emotion, tokenizer, max_seq_length):
         print("\n\n-> PREPROCESS DATA")
 
@@ -47,7 +45,8 @@ class DialogueGenerator:
         # Pad sequences
         encoder_inputs_1 = tf.keras.preprocessing.sequence.pad_sequences(chat_text_sequences, maxlen=max_seq_length, padding='post')
         decoder_inputs = tf.keras.preprocessing.sequence.pad_sequences(text_response_sequences, maxlen=max_seq_length, padding='post')
-        print("\nPadding...\nEncoder input[0] = ", encoder_inputs_1[0])
+        print("\nPadding...")
+        print("Encoder input[0] = ", encoder_inputs_1[0])
         print("Decoder input[0] = ", decoder_inputs[0])
 
         # Shift targets for teacher forcing
@@ -64,16 +63,18 @@ class DialogueGenerator:
         
         return encoder_inputs_1, encoder_inputs_2, decoder_inputs, decoder_outputs
 
-    # Define the encoder
     def define_encoder(self):
         print("\n\n-> ENCODER")
 
         print("\n- LAYER 1 - INPUT")
-        encoder_chat_text_inputs = tf.keras.layers.Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_1_chat_text')
-        encoder_emotion_inputs = tf.keras.layers.Input(shape=(self.EMOTION_SIZE,), name='encoder_input_2_emotion')
+        encoder_chat_text_inputs = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_1_chat_text')
+        encoder_emotion_inputs = Input(shape=(self.EMOTION_SIZE,), name='encoder_input_2_emotion')
+        print("Encoder Chat Text Input Shape:", encoder_chat_text_inputs.shape)
+        print("Encoder Emotion Input Shape:", encoder_emotion_inputs.shape)
         
         print("\n- LAYER 2 - EMBEDDING")
-        encoder_embedding = tf.keras.layers.Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True)(encoder_chat_text_inputs)
+        encoder_embedding = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True)(encoder_chat_text_inputs)
+        print("Encoder Embedding Output Shape:", encoder_embedding.shape)
 
         print("\n- LAYER 3 - (ORDER) - POSITIONAL EMBEDDING")
 
@@ -84,32 +85,36 @@ class DialogueGenerator:
         # Add positional embedding to the dense vector
         positional_embeddings = keras.layers.Add()([encoder_embedding, position_encoding])
 
+        print("Positional Embeddings Output Shape:", positional_embeddings.shape)
+
         print("\n- LAYER 4 - (CONTEXT) - MULTI HEAD ATTENTION")
         attention = keras.layers.MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, val_dim=self.EMBEDDING_DIM)(positional_embeddings)
+        print("Attention Output Shape:", attention.shape)
 
         print("\n- LAYER 5 - (HISTORY) - LSTM")
-        encoder_outputs, state_h, state_c = tf.keras.layers.LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True)(attention)
+        encoder_outputs, state_h, state_c = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True)(attention)
         encoder_states = [state_h, state_c]
+        print("LSTM Output Shape:", encoder_outputs.shape)
 
         print("\nEncoder defined.")
 
         return concatenated_inputs, encoder_states, encoder_outputs
 
-    # Define the decoder with context memory
     def define_decoder(self, encoder_states, encoder_outputs):
         print("\n\n-> DECODER")
 
         # LAYER 1 - INPUT
         print("\n- LAYER 1 - INPUT")
-        decoder_inputs = tf.keras.layers.Input(shape=(self.MAX_SEQ_LENGTH,))
+        decoder_inputs = Input(shape=(self.MAX_SEQ_LENGTH,))
 
         # LAYER 2 - EMBEDDING
         print("\n- LAYER 2 - EMBEDDING")
-        decoder_embedding = tf.keras.layers.Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True)(decoder_inputs)
+        decoder_embedding = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True)(decoder_inputs)
+        print("Decoder Embedding Output Shape:", decoder_embedding.shape)
         
         # LAYER 3 - LSTM LAYER
         print("\n- LAYER 3 - LSTM")
-        lstm_context = tf.keras.layers.LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True)
+        lstm_context = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True)
         
         # Initialize context memory with encoder final states
         _, context_state_h, context_state_c = lstm_context(decoder_embedding, initial_state=encoder_states)
@@ -117,28 +122,31 @@ class DialogueGenerator:
         
         # LAYER 4 - LSTM
         print("\n- LAYER 4 - LSTM")
-        lstm_decoder = tf.keras.layers.LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True)
+        lstm_decoder = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True)
         decoder_outputs, _, _ = lstm_decoder(decoder_embedding, initial_state=context_state)
+        print("LSTM Decoder Output Shape:", decoder_outputs.shape)
         
         # LAYER 5 - ATTENTION
         print("\n- LAYER 5 - ATTENTION")
-        attention = tf.keras.layers.Attention()
+        attention = Attention()
         attention_output = attention([decoder_outputs, encoder_outputs])
+        print("Attention Output Shape:", attention_output.shape)
         
         # LAYER 6 - CONCATENATION 
         print("\n- LAYER 6 - CONCATENATION")
-        decoder_concat = tf.keras.layers.Concatenate(axis=-1)([decoder_outputs, attention_output])
+        decoder_concat = Concatenate(axis=-1)([decoder_outputs, attention_output])
+        print("Concatenation Output Shape:", decoder_concat.shape)
         
         # LAYER 7 - DENSE 
         print("\n- LAYER 7 - DENSE")
-        decoder_dense = tf.keras.layers.Dense(self.VOCAB_SIZE)
+        decoder_dense = Dense(self.VOCAB_SIZE)
         decoder_outputs = decoder_dense(decoder_concat)
+        print("Dense Output Shape:", decoder_outputs.shape)
         
         print("\nDecoder defined.\n")
         
         return decoder_inputs, decoder_outputs
 
-    # Define the model
     def define_model(self):
         concatenated_inputs, encoder_states, encoder_outputs = define_encoder()
         decoder_inputs, decoder_outputs = define_decoder(encoder_states, encoder_outputs)
@@ -148,13 +156,60 @@ class DialogueGenerator:
         
         return model
 
-    # Function for training the model
     def train_model(self, model, preprocessed_concatenated_inputs, preprocessed_decoder_inputs, preprocessed_decoder_outputs, batch_size, epochs):
-        model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy', 'precision', 'recall', 'f1', 'mae', 'mse', 'r_squared', 'auc', 'mean_iou', 'top_k_categorical_accuracy'])
+        model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', 
+            metrics=['accuracy', 'precision', 'recall', 'f1', 'mae', 'mse', 'r_squared', 'auc', 'mean_iou', 'top_k_categorical_accuracy'])
         model.fit([preprocessed_concatenated_inputs, preprocessed_decoder_inputs], preprocessed_decoder_outputs, batch_size=batch_size, epochs=epochs, validation_split=0.2)
         print("\nModel trained.\n")
         
-    def generate_response(self, chat_text, emotion_str, tokenizer, model, max_seq_length):
+    def create_train_and_save_model(self):
+        # Load the dataset
+        df = pd.read_csv('Conversation3.csv')
+        self.display_top_rows(df)
+
+        # Extract data from the DataFrame
+        chat_text = df['chat_text'].tolist()
+        text_response = df['text_response'].tolist()
+        emotion = df['emotion'].tolist()
+        print("\nData extracted from DataFrame.")
+
+        # Concatenate chat_text and text_response
+        all_texts = chat_text + text_response
+        print("Texts concatenated.\n")
+
+        # Create tokenizer and fit on all texts
+        tokenizer = tf.keras.preprocessing.text.Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
+        tokenizer.fit_on_texts(all_texts)
+        tokenizer.word_index['<start>'] = tokenizer.num_words + 1
+        tokenizer.word_index['<end>'] = tokenizer.num_words + 2
+
+        # Manually add <start> and <end> to index_word
+        tokenizer.index_word[tokenizer.word_index['<start>']] = '<start>'
+        tokenizer.index_word[tokenizer.word_index['<end>']] = '<end>'
+
+        print("Tokenizer created and fitted on texts.")
+        print("Tokenizer size = %d\n", self.VOCAB_SIZE)
+
+        # Preprocess data
+        preprocessed_concatenated_inputs, preprocessed_decoder_inputs, preprocessed_decoder_outputs = self.preprocess_data(chat_text, text_response, emotion, tokenizer, self.MAX_SEQ_LENGTH)
+
+        # Define and compile the model
+        model = self.define_model()
+
+        # Train the model
+        self.train_model(model, preprocessed_concatenated_inputs, preprocessed_decoder_inputs, preprocessed_decoder_outputs, batch_size=64, epochs=1)           # epoch is 10, for error correcting purpose made this 1
+
+        # Save the tokenizer
+        tokenizer_path = "tokenizer.pkl"
+        with open(tokenizer_path, 'wb') as tokenizer_file:
+            pickle.dump(tokenizer, tokenizer_file)
+        print("\nTokenizer saved at ", tokenizer_path)
+
+        # Save the trained model
+        model.save("conversation_model.keras")
+        print("Trained model saved.\n")
+
+    def generate_response_with_greedy_approach(self, chat_text, emotion_str, tokenizer, model, max_seq_length):
         print("\n\n-> GENERATE RESPONSE")
 
         # Preprocess input text
@@ -231,7 +286,7 @@ class DialogueGenerator:
         
         return decoded_sentence.strip()
 
-    def generate_response_beam_search(self, chat_text, emotion_str, tokenizer, model, max_seq_length, beam_width=3, length_penalty_factor=0.6):
+    def generate_response_with_beam_search(self, chat_text, emotion_str, tokenizer, model, max_seq_length, beam_width=3, length_penalty_factor=0.6):
         # Preprocess input text
         chat_text_sequence = tokenizer.texts_to_sequences([chat_text])
         chat_text_sequence = tf.keras.preprocessing.sequence.pad_sequences(chat_text_sequence, maxlen=max_seq_length, padding='post')
@@ -295,50 +350,3 @@ class DialogueGenerator:
         decoded_sentence = ' '.join(tokenizer.index_word.get(idx, '<OOV>') for idx in best_seq[0])
         
         return decoded_sentence.strip()
-
-    def train_and_save_model(self):
-        # Load the dataset
-        df = pd.read_csv('Conversation3.csv')
-        self.display_top_rows(df)
-
-        # Extract data from the DataFrame
-        chat_text = df['chat_text'].tolist()
-        text_response = df['text_response'].tolist()
-        emotion = df['emotion'].tolist()
-        print("\nData extracted from DataFrame.")
-
-        # Concatenate chat_text and text_response
-        all_texts = chat_text + text_response
-        print("Texts concatenated.\n")
-
-        # Create tokenizer and fit on all texts
-        tokenizer = tf.keras.preprocessing.text.Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
-        tokenizer.fit_on_texts(all_texts)
-        tokenizer.word_index['<start>'] = tokenizer.num_words + 1
-        tokenizer.word_index['<end>'] = tokenizer.num_words + 2
-
-        # Manually add <start> and <end> to index_word
-        tokenizer.index_word[tokenizer.word_index['<start>']] = '<start>'
-        tokenizer.index_word[tokenizer.word_index['<end>']] = '<end>'
-
-        print("Tokenizer created and fitted on texts.")
-        print("Tokenizer size = %d\n", self.VOCAB_SIZE)
-
-        # Preprocess data
-        preprocessed_concatenated_inputs, preprocessed_decoder_inputs, preprocessed_decoder_outputs = self.preprocess_data(chat_text, text_response, emotion, tokenizer, self.MAX_SEQ_LENGTH)
-
-        # Define and compile the model
-        model = self.define_model()
-
-        # Train the model
-        self.train_model(model, preprocessed_concatenated_inputs, preprocessed_decoder_inputs, preprocessed_decoder_outputs, batch_size=64, epochs=1)           # epoch is 10, for error correcting purpose made this 1
-
-        # Save the tokenizer
-        tokenizer_path = "tokenizer.pkl"
-        with open(tokenizer_path, 'wb') as tokenizer_file:
-            pickle.dump(tokenizer, tokenizer_file)
-        print("\nTokenizer saved at ", tokenizer_path)
-
-        # Save the trained model
-        model.save("conversation_model.keras")
-        print("Trained model saved.\n")
