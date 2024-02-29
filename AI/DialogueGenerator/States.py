@@ -74,6 +74,13 @@ def get_emotion(index):
             return emotion.name
     return None
 
+# Function to get emotion index
+def get_emotion_index(emotion):
+    try:
+        return EmotionStates[emotion.strip().capitalize()].value
+    except KeyError:
+        return None
+
 def get_emoji(emotion):
     emojis = {
         EmotionStates.Amiration: '😊',
