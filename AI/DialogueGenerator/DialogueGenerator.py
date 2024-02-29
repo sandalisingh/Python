@@ -3,7 +3,7 @@ import numpy as np
 import tensorflow as tf
 from enum import Enum
 from States import EmotionStates, get_emotion_index
-from tensorflow.keras.layers import Input, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense
+from tensorflow.keras.layers import Input, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense, LayerNormalization
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras import backend
@@ -73,17 +73,17 @@ class DialogueGenerator:
     def define_encoder(self):
         print("\n\n-> ENCODER")
 
-        print("\n- LAYER 1 - INPUT")
+        print("\n- LAYER 0 - INPUT")
         encoder_chat_text_inputs = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_1_chat_text')
-        encoder_emotion_inputs = Input(shape=(self.EMOTION_SIZE,), name='encoder_input_2_emotion')
+        # encoder_emotion_inputs = Input(shape=(self.EMOTION_SIZE,), name='encoder_input_2_emotion')
         print("Encoder Chat Text Input Shape: ", encoder_chat_text_inputs.shape)
-        print("Encoder Emotion Input Shape: ", encoder_emotion_inputs.shape)
+        # print("Encoder Emotion Input Shape: ", encoder_emotion_inputs.shape)
         
-        print("\n- LAYER 2 - EMBEDDING")
+        print("\n- LAYER 1 - EMBEDDING")
         encoder_embedding = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_chat_text')(encoder_chat_text_inputs)
         print("Encoder Embedding Output Shape: ", encoder_embedding.shape)
 
-        print("\n- LAYER 3 - (ORDER) - POSITIONAL EMBEDDING")
+        print("\n- LAYER 2 - (ORDER) - POSITIONAL EMBEDDING")
 
         # Generate positional encodings
         # position_encoding = tf.range(start=0, limit=self.MAX_SEQ_LENGTH, delta=1)
@@ -92,16 +92,24 @@ class DialogueGenerator:
         print("Positional encoding = ", position_encoding)
 
         # Add positional embedding to the dense vector
-        positional_embeddings = Add(name='positional_embedding_of_chat_text')([encoder_embedding, tf.expand_dims(position_encoding, 0)])
+        positional_output = Add(name='positional_embedding_of_chat_text')([encoder_embedding, tf.expand_dims(position_encoding, 0)])
 
-        print("Positional Embeddings Output Shape: ", positional_embeddings.shape)
+        print("Positional Embeddings Output Shape: ", positional_output.shape)
 
-        print("\n- LAYER 4 - (CONTEXT) - MULTI HEAD ATTENTION")
-        attention = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='multi_head_attention_to_chat_text')(positional_embeddings, key=positional_embeddings, value=positional_embeddings)
+        print("\n- LAYER 3 - (CONTEXT) - MULTI HEAD ATTENTION")
+        attention = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='multi_head_attention_to_chat_text')(positional_output, key=positional_output, value=positional_output)
         print("Attention Output Shape: ", attention.shape)
 
-        print("\n- LAYER 5 - (HISTORY) - LSTM")
-        encoder_outputs, state_h, state_c = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_chat_text')(attention)
+        print("\n- LAYER 4 - ADDING RESIDUAL CONNECTION")
+        residual_output = Add(name='residual_positional_output_plus_attention_output')([positional_output, attention])
+        print("Residual Addition Shape: ", residual_output.shape)
+
+        print("\n- LAYER 5 - NORMALIZATION")
+        normalised_output = LayerNormalization(name='normalization_of_residual_output')(residual_output)
+        print("Normalization Shape: ", normalised_output.shape)
+
+        print("\n- LAYER 6 - (HISTORY) - LSTM")
+        encoder_outputs, state_h, state_c = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_chat_text')(normalised_output)
         encoder_states = [state_h, state_c]
         print("LSTM Output Shape: ", encoder_outputs.shape)
 
