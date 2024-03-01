@@ -50,10 +50,10 @@ class DialogueGenerator:
         print("Text Response Sequence[0] = ", text_response_sequences[0])
         
         # Pad sequences
-        encoder_inputs_1 = tf.keras.preprocessing.sequence.pad_sequences(chat_text_sequences, maxlen=self.MAX_SEQ_LENGTH, padding='post')
+        encoder_inputs_chat_text = tf.keras.preprocessing.sequence.pad_sequences(chat_text_sequences, maxlen=self.MAX_SEQ_LENGTH, padding='post')
         decoder_inputs = tf.keras.preprocessing.sequence.pad_sequences(text_response_sequences, maxlen=self.MAX_SEQ_LENGTH, padding='post')
         print("\nPadding...")
-        print("Encoder input[0] = ", encoder_inputs_1[0])
+        print("Encoder input[0] = ", encoder_inputs_chat_text[0])
         print("Decoder input[0] = ", decoder_inputs[0])
 
         # Shift targets for teacher forcing
@@ -63,21 +63,22 @@ class DialogueGenerator:
         print("\nDecoder output[0] = ", decoder_outputs[0])
 
         # Map emotion strings to their corresponding enum values
-        encoder_inputs_2 = [get_emotion_index(emo) for emo in emotion] 
-        print("\nemotion_index[0] = ", encoder_inputs_2[0])
+        emotion_inputs = [get_emotion_index(emo) for emo in emotion] 
+        print("\nemotion_index[0] = ", emotion_inputs[0])
+
+        # emotion list to vector
+        emotion_inputs = np.array(emotion_inputs)
         
         print("Data preprocessed.")
         
-        return encoder_inputs_1, encoder_inputs_2, decoder_inputs, decoder_outputs
+        return encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs
 
     def define_encoder(self):
         print("\n\n-> ENCODER")
 
         print("\n- LAYER 0 - INPUT")
         encoder_chat_text_inputs = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_1_chat_text')
-        # encoder_emotion_inputs = Input(shape=(self.EMOTION_SIZE,), name='encoder_input_2_emotion')
         print("Encoder Chat Text Input Shape: ", encoder_chat_text_inputs.shape)
-        # print("Encoder Emotion Input Shape: ", encoder_emotion_inputs.shape)
         
         print("\n- LAYER 1 - EMBEDDING")
         encoder_embedding = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_chat_text')(encoder_chat_text_inputs)
@@ -86,7 +87,6 @@ class DialogueGenerator:
         print("\n- LAYER 2 - (ORDER) - POSITIONAL EMBEDDING")
 
         # Generate positional encodings
-        # position_encoding = tf.range(start=0, limit=self.MAX_SEQ_LENGTH, delta=1)
         position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
         position_encoding = position_encoding * tf.cast(tf.ones((1, self.EMBEDDING_DIM)), dtype=tf.float32)
         print("Positional encoding = ", position_encoding)
@@ -121,24 +121,43 @@ class DialogueGenerator:
         print("\n\n-> DECODER")
 
         # LAYER 1 - INPUT
-        print("\n- LAYER 1 - INPUT")
-        decoder_inputs = Input(shape=(self.MAX_SEQ_LENGTH,), name='decoder_input')
+        print("\n- LAYER 0 - EMOTION INPUT")
+        emotion_inputs = Input(shape=(1,), name='decoder_input1_emotion')
+        
+        print("\n- LAYER 1 - DECODER INPUT")
+        decoder_inputs = Input(shape=(self.MAX_SEQ_LENGTH,), name='decoder_input2_prev_seq')
 
         # LAYER 2 - EMBEDDING
-        print("\n- LAYER 2 - EMBEDDING")
-        decoder_embedding = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='embedding_of_decoder_input')(decoder_inputs)
+        print("\n- LAYER 2 - EMBEDDING OF DECODER INPUT")
+        decoder_embedding = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='embedding_of_decoder_input2')(decoder_inputs)
         print("Decoder Embedding Output Shape: ", decoder_embedding.shape)
+
+        # print("\n- LAYER 2 - EMBEDDING OF EMOTION")
+        # decoder_embedding = Embedding(self.EMOTION_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='embedding_of_emotion_input')(decoder_inputs)
+        # print("Decoder Embedding Output Shape: ", decoder_embedding.shape)
+
+        print("\n- LAYER 3 - (ORDER) - POSITIONAL EMBEDDING")
+
+        # Generate positional encodings
+        position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
+        position_encoding = position_encoding * tf.cast(tf.ones((1, self.EMBEDDING_DIM)), dtype=tf.float32)
+        print("Positional encoding = ", position_encoding)
+
+        # Add positional embedding to the dense vector
+        positional_output = Add(name='positional_embedding_of_decoder_2')([decoder_embedding, tf.expand_dims(position_encoding, 0)])
+
+        print("Positional Embeddings of Decoder Output Shape: ", positional_output.shape)
         
         # LAYER 3 - LSTM LAYER
-        print("\n- LAYER 3 - LSTM")
+        print("\n- LAYER 4 - LSTM")
         lstm_context = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm1_of_decoder_embedding_and_encoder_states')
         
         # Initialize context memory with encoder final states
-        _, context_state_h, context_state_c = lstm_context(decoder_embedding, initial_state=encoder_states)
+        _, context_state_h, context_state_c = lstm_context(positional_output, initial_state=encoder_states)
         context_state = [context_state_h, context_state_c]
         
         # LAYER 4 - LSTM
-        print("\n- LAYER 4 - LSTM")
+        print("\n- LAYER 5 - LSTM")
         lstm_decoder = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm2_of_decoder_embedding_and_prev')
         decoder_outputs, _, _ = lstm_decoder(decoder_embedding, initial_state=context_state)
         print("LSTM Decoder Output Shape: ", decoder_outputs.shape)
@@ -162,12 +181,12 @@ class DialogueGenerator:
         
         print("\nDecoder defined.\n")
         
-        return decoder_inputs, decoder_outputs
+        return emotion_inputs, decoder_inputs, decoder_outputs
 
     def define_model(self):
-        concatenated_inputs, encoder_states, encoder_outputs = self.define_encoder()
-        decoder_inputs, decoder_outputs = self.define_decoder(encoder_states, encoder_outputs)
-        self.model = Model([concatenated_inputs, decoder_inputs], decoder_outputs)
+        chat_text_inputs, encoder_states, encoder_outputs = self.define_encoder()
+        emotion_inputs, decoder_inputs, decoder_outputs = self.define_decoder(encoder_states, encoder_outputs)
+        self.model = Model([chat_text_inputs, emotion_inputs, decoder_inputs], decoder_outputs)
         
         print("\nModel defined.")
         print("Model Summary:")
@@ -186,11 +205,11 @@ class DialogueGenerator:
             print(output_tensor)
             print('\n')
 
-    def train_model(self, encoder_inputs, decoder_inputs, decoder_outputs, batch_size, epochs):
+    def train_model(self, encoder_inputs, emotion_inputs, decoder_inputs, decoder_outputs, batch_size, epochs):
         self.model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
         
         print_callback = LambdaCallback(on_epoch_end=self.print_layer_output)
-        self.model.fit([encoder_inputs, decoder_inputs], decoder_outputs, batch_size=batch_size, 
+        self.model.fit([encoder_inputs, emotion_inputs, decoder_inputs], decoder_outputs, batch_size=batch_size, 
             epochs=epochs, validation_split=0.2, callbacks=[print_callback])
         
         print("\nModel trained.\n")
@@ -239,13 +258,19 @@ class DialogueGenerator:
         self.create_tokenizer(chat_text, text_response)
         
         # Preprocess data
-        encoder_inputs_1, encoder_inputs_2, decoder_inputs, decoder_outputs = self.preprocess_data(chat_text, text_response, emotion)
+        encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs = self.preprocess_data(chat_text, text_response, emotion)
+
+        print("\nAfter Preprocess...")
+        print("Shape of encoder_inputs_chat_text = ", encoder_inputs_chat_text.shape)
+        print("Shape of emotion_inputs = ", emotion_inputs.shape)
+        print("Shape of decoder_inputs = ", decoder_inputs.shape)
+        print("Shape of decoder_outputs = ", decoder_outputs.shape)
 
         # Define and compile the model
         self.define_model()
 
         # Train the model
-        self.train_model(encoder_inputs_1, decoder_inputs, decoder_outputs, batch_size=64, epochs=1)           
+        self.train_model(encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs, batch_size=64, epochs=10)           
 
         # Save the tokenizer
         self.save_tokenizer()
