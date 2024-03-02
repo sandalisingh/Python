@@ -4,7 +4,7 @@ import tensorflow as tf
 import pickle
 from enum import Enum
 from States import EmotionStates, get_emotion_index
-from tensorflow.keras.layers import Flatten, Input, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector
+from tensorflow.keras.layers import Flatten, Input, InputLayer, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras import backend
@@ -165,9 +165,9 @@ class DialogueGenerator:
         print("Model Summary:")
         self.model.summary()
 
-        # Assuming self.model is your Keras model
+        # Plot the model graph with colors and save it
         plot_model(self.model, to_file='model_graph_plot.png', show_shapes=True, show_layer_names=True)
-
+        
     def print_layer_output(self, epoch, logs):
         chat_text, emotion, prev_seq, _ = self.preprocess_data([self.zeroth_row['chat_text']], [self.zeroth_row['text_response']], [self.zeroth_row['emotion']])
         supply_input_tensors = {
@@ -194,14 +194,10 @@ class DialogueGenerator:
                     # For layers with no input_names (e.g., Activation, Dropout), skip
                     continue
 
-                try:
+                if hasattr(layer, 'output_names'):
                     layer_output_function = backend.function(input_tensors, [layer.output])
                     output_tensors = layer_output_function(input_tensors)[0]
-                except Exception as e:
-                    print(f'Error computing output for layer {layer_index}: {layer_name}')
-                    print(f'Error message: {str(e)}')
 
-                if hasattr(layer, 'output_names'):
                     # Update input tensors dictionary for subsequent layers
                     output_names = layer.output_names
                     for output_name, output_tensor in zip(output_names, output_tensors):
@@ -211,7 +207,7 @@ class DialogueGenerator:
                     print(f'Layer {layer_index}: {layer_name} input:')
                     print(input_tensors)
                     print('\n')
-                if len(output_tensor) != 0:
+                if len(output_tensors) != 0:
                     print(f'Layer {layer_index}: {layer_name} output:')
                     print(output_tensors)
                     print('\n')
