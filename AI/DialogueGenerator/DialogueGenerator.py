@@ -1,12 +1,14 @@
 import pandas as pd
 import numpy as np
 import tensorflow as tf
+import pickle
 from enum import Enum
 from States import EmotionStates, get_emotion_index
-from tensorflow.keras.layers import Input, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense, LayerNormalization
+from tensorflow.keras.layers import Flatten, Input, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras import backend
+from tensorflow.keras.utils import plot_model
 
 class DialogueGenerator:
 
@@ -73,137 +75,194 @@ class DialogueGenerator:
         
         return encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs
 
+    def generate_positional_encoding(self):
+        position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
+        position_encoding = position_encoding * tf.cast(tf.ones((1, self.EMBEDDING_DIM)), dtype=tf.float32)
+        position_encoding = tf.expand_dims(position_encoding, 0)
+        return position_encoding
+
     def define_encoder(self):
         print("\n\n-> ENCODER")
 
         print("\n- LAYER 0 - INPUT")
-        encoder_chat_text_inputs = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_1_chat_text')
-        print("Encoder Chat Text Input Shape: ", encoder_chat_text_inputs.shape)
+        chat_text = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_chat_text')
+        print("Encoder Chat Text Input Shape: ", chat_text.shape)
         
         print("\n- LAYER 1 - EMBEDDING")
-        encoder_embedding = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_chat_text')(encoder_chat_text_inputs)
-        print("Encoder Embedding Output Shape: ", encoder_embedding.shape)
+        embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_chat_text')(chat_text)
+        print("Encoder Embedding Output Shape: ", embedding_output.shape)
 
         print("\n- LAYER 2 - (ORDER) - POSITIONAL EMBEDDING")
-
-        # Generate positional encodings
-        position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
-        position_encoding = position_encoding * tf.cast(tf.ones((1, self.EMBEDDING_DIM)), dtype=tf.float32)
-        print("Positional encoding = ", position_encoding)
-
-        # Add positional embedding to the dense vector
-        positional_output = Add(name='positional_embedding_of_chat_text')([encoder_embedding, tf.expand_dims(position_encoding, 0)])
-
+        positional_output = Add(name='positional_embedding_of_chat_text')([embedding_output, self.generate_positional_encoding()])
         print("Positional Embeddings Output Shape: ", positional_output.shape)
 
         print("\n- LAYER 3 - (CONTEXT) - MULTI HEAD ATTENTION")
-        attention = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='multi_head_attention_to_chat_text')(positional_output, key=positional_output, value=positional_output)
-        print("Attention Output Shape: ", attention.shape)
+        attention_output = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='multi_head_attention_to_chat_text')(positional_output, key=positional_output, value=positional_output)
+        print("Attention Output Shape: ", attention_output.shape)
 
         print("\n- LAYER 4 - ADDING RESIDUAL CONNECTION")
-        residual_output = Add(name='residual_positional_output_plus_attention_output')([positional_output, attention])
+        residual_output = Add(name='add_residual_connection_of_chat_text')([positional_output, attention_output])
         print("Residual Addition Shape: ", residual_output.shape)
 
         print("\n- LAYER 5 - NORMALIZATION")
-        normalised_output = LayerNormalization(name='normalization_of_residual_output')(residual_output)
+        normalised_output = LayerNormalization(name='normalization_of_chat_text')(residual_output)
         print("Normalization Shape: ", normalised_output.shape)
 
         print("\n- LAYER 6 - (HISTORY) - LSTM")
-        encoder_outputs, state_h, state_c = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_chat_text')(normalised_output)
-        encoder_states = [state_h, state_c]
-        print("LSTM Output Shape: ", encoder_outputs.shape)
+        lstm_output_seq, state_h, state_c = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_chat_text')(normalised_output)
+        lstm_output_states = [state_h, state_c]
+        print("LSTM Seq: ", lstm_output_seq.shape)
+        print("LSTM Hidden State: ", state_h.shape)
+        print("LSTM Cell State: ", state_c.shape)
 
+        # Define the Keras Model with name "encoder"
+        encoder_model = Model(inputs=chat_text, outputs=[lstm_output_seq, lstm_output_states], name="encoder")
         print("\nEncoder defined.")
 
-        return encoder_chat_text_inputs, encoder_states, encoder_outputs
+        return encoder_model
 
-    def define_decoder(self, encoder_states, encoder_outputs):
+    def define_decoder(self, encoder_outputs, encoder_states):
         print("\n\n-> DECODER")
 
-        # LAYER 1 - INPUT
         print("\n- LAYER 0 - EMOTION INPUT")
-        emotion_inputs = Input(shape=(1,), name='decoder_input1_emotion')
+        emotion = Input(shape=(1,), name='decoder_input1_emotion')
+        print("Decoder Emotion Input Shape: ", emotion.shape)
         
-        print("\n- LAYER 1 - DECODER INPUT")
-        decoder_inputs = Input(shape=(self.MAX_SEQ_LENGTH,), name='decoder_input2_prev_seq')
+        print("\n- LAYER 1 - DECODER PREV SEQ INPUT")
+        prev_seq = Input(shape=(self.MAX_SEQ_LENGTH,), name='decoder_input2_prev_seq')
+        print("Decoder Prev Seq Input Shape: ", prev_seq.shape)
 
-        # LAYER 2 - EMBEDDING
-        print("\n- LAYER 2 - EMBEDDING OF DECODER INPUT")
-        decoder_embedding = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='embedding_of_decoder_input2')(decoder_inputs)
-        print("Decoder Embedding Output Shape: ", decoder_embedding.shape)
+        # print("\n- LAYER 2 - RESHAPE EMOTION")
+        # repeat_emotion = RepeatVector(50)(emotion)
+        # flattened_emotion = Flatten()(repeat_emotion)
+        # print("Emotion tiled shape: ", flattened_emotion.shape)
 
-        # print("\n- LAYER 2 - EMBEDDING OF EMOTION")
-        # decoder_embedding = Embedding(self.EMOTION_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='embedding_of_emotion_input')(decoder_inputs)
-        # print("Decoder Embedding Output Shape: ", decoder_embedding.shape)
+        # print("\n- LAYER 4 - ADD EMOTION EMBEDDING TO PREVIOUS SEQUENCE")
+        # emotion_embedding_output = Add()([prev_seq, flattened_emotion])
+        # print("Emotion embedding shape: ", emotion_embedding_output.shape)
 
-        print("\n- LAYER 3 - (ORDER) - POSITIONAL EMBEDDING")
+        # print("\n- LAYER 3 - EMOTION EMBEDDING")
+        # # Add the emotion value to each token in the previous sequence
+        # emotion_embedding_output = Add()([prev_seq, flattened_emotion])
+        # print("Emotion embedding shape: ", emotion_embedding_output.shape)
 
-        # Generate positional encodings
-        position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
-        position_encoding = position_encoding * tf.cast(tf.ones((1, self.EMBEDDING_DIM)), dtype=tf.float32)
-        print("Positional encoding = ", position_encoding)
+        print("\n- LAYER 4 - EMBEDDING OF DECODER INPUT")
+        embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_decoder_input2')(prev_seq)
+        print("Decoder Embedding Output Shape: ", embedding_output.shape)
 
-        # Add positional embedding to the dense vector
-        positional_output = Add(name='positional_embedding_of_decoder_2')([decoder_embedding, tf.expand_dims(position_encoding, 0)])
-
+        print("\n- LAYER 5 - (ORDER) - POSITIONAL EMBEDDING")
+        positional_output = Add(name='positional_embedding_of_decoder_2')([embedding_output, self.generate_positional_encoding()])
         print("Positional Embeddings of Decoder Output Shape: ", positional_output.shape)
+
+        print("\n- LAYER 6 - LSTM")
+        lstm_output,_,_ = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_prev_seq')(positional_output)
+        print("LSTM Shape: ", lstm_output.shape)
         
-        # LAYER 3 - LSTM LAYER
-        print("\n- LAYER 4 - LSTM")
-        lstm_context = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm1_of_decoder_embedding_and_encoder_states')
-        
-        # Initialize context memory with encoder final states
-        _, context_state_h, context_state_c = lstm_context(positional_output, initial_state=encoder_states)
-        context_state = [context_state_h, context_state_c]
-        
-        # LAYER 4 - LSTM
-        print("\n- LAYER 5 - LSTM")
-        lstm_decoder = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm2_of_decoder_embedding_and_prev')
-        decoder_outputs, _, _ = lstm_decoder(decoder_embedding, initial_state=context_state)
-        print("LSTM Decoder Output Shape: ", decoder_outputs.shape)
-        
-        # LAYER 5 - ATTENTION
-        print("\n- LAYER 5 - ATTENTION")
-        attention = Attention(name='attention_to_prev_and_encoder_outputs')
-        attention_output = attention([decoder_outputs, encoder_outputs])
+        print("\n- LAYER 7 - ATTENTION")
+        attention_output = Attention(name='attention_to_prev_and_encoder_outputs')([lstm_output, encoder_outputs])
         print("Attention Output Shape: ", attention_output.shape)
+
+        # print("\n- LAYER 4 - ADDING RESIDUAL CONNECTION")
+        # residual_output = Add(name='add_residual_connection_of_prev_seq')([positional_output, attention_output])
+        # print("Residual Addition Shape: ", residual_output.shape)
+
+        # print("\n- LAYER 5 - NORMALIZATION")
+        # normalised_output = LayerNormalization(name='normalization_of_prev_seq')(residual_output)
+        # print("Normalization Shape: ", normalised_output.shape)
         
-        # LAYER 6 - CONCATENATION 
-        print("\n- LAYER 6 - CONCATENATION")
-        decoder_concat = Concatenate(axis=-1, name='cancat_decoder_outputs_and_prev')([decoder_outputs, attention_output])
-        print("Concatenation Output Shape: ", decoder_concat.shape)
+        # print("\n- LAYER 6 - CONCATENATION")
+        # concat_output = Concatenate(axis=-1, name='cancat_decoder_outputs_and_prev')([decoder_outputs, normalised_output])
+        # print("Concatenation Output Shape: ", concat_output.shape)
         
-        # LAYER 7 - DENSE 
-        print("\n- LAYER 7 - DENSE")
-        decoder_dense = Dense(self.VOCAB_SIZE, name='dense_of_prev')
-        decoder_outputs = decoder_dense(decoder_concat)
-        print("Dense Output Shape: ", decoder_outputs.shape)
+        print("\n- LAYER 8 - DENSE")
+        dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer')(attention_output)
+        print("Dense Output Shape: ", dense_output.shape)
         
+        # Define the Keras Model with name "decoder"
+        decoder_model = Model(inputs=[emotion, prev_seq], outputs=dense_output, name="decoder")
+
         print("\nDecoder defined.\n")
         
-        return emotion_inputs, decoder_inputs, decoder_outputs
+        return decoder_model
 
     def define_model(self):
-        chat_text_inputs, encoder_states, encoder_outputs = self.define_encoder()
-        emotion_inputs, decoder_inputs, decoder_outputs = self.define_decoder(encoder_states, encoder_outputs)
-        self.model = Model([chat_text_inputs, emotion_inputs, decoder_inputs], decoder_outputs)
+        encoder_model = self.define_encoder()
+
+        chat_text = encoder_model.inputs[0]
+        encoder_output_seq = encoder_model.outputs[0]
+        encoder_output_states = encoder_model.outputs[1]
+
+        decoder_model = self.define_decoder(encoder_output_seq, encoder_output_states)  # Using encoder states and outputs
+    
+        emotion = decoder_model.inputs[0]
+        prev_seq = decoder_model.inputs[1]
+        output_seq = decoder_model.outputs[0]
+
+        self.model = Model([chat_text, emotion, prev_seq], output_seq)
         
         print("\nModel defined.")
         print("Model Summary:")
         self.model.summary()
+        print("Encoder:")
+        encoder_model.summary()
+        print("Decoder:")
+        decoder_model.summary()
+
+        # Assuming self.model is your Keras model
+        plot_model(self.model, to_file='model_graph_plot.png', show_shapes=True, show_layer_names=True)
 
     def print_layer_output(self, epoch, logs):
-        # Input tensor (you need to provide your input data here)
-        chat_text, emotion, _, _ = self.preprocess_data([self.zeroth_row['chat_text']], [self.zeroth_row['text_response']], [self.zeroth_row['emotion']])
-        zeroth_row_input_tensor = [chat_text, emotion]
+        chat_text, emotion, prev_seq, _ = self.preprocess_data([self.zeroth_row['chat_text']], [self.zeroth_row['text_response']], [self.zeroth_row['emotion']])
+        input_layer_tensors = [chat_text, emotion, prev_seq]
+        i=0
+        supply_input_tensors = {
+            'encoder_input_chat_text' : chat_text,
+            'decoder_input1_emotion' : emotion,
+            'decoder_input2_prev_seq' : prev_seq
+        }
 
-        # Get output tensor of each layer
-        for layer_index, layer in enumerate(self.model.layers):
-            layer_output_function = backend.function([self.model.input], [layer.output])
-            output_tensor = layer_output_function([zeroth_row_input_tensor])[0]
-            print(f'Layer {layer_index} output:')
-            print(output_tensor)
-            print('\n')
+        try:
+            # Loop through each layer and print input and output tensors
+            for layer_index, layer in enumerate(self.model.layers):
+                layer_name = layer.name if layer.name else f"UnnamedLayer_{layer_index}"
+                input_tensors = []
+                output_tensors = []
+
+                if hasattr(layer, 'input_names'):
+                    # For non-InputLayers, receive input tensors from supply_tensors
+                    input_names = layer.input_names
+                    input_tensors = [supply_input_tensors[input_name] for input_name in input_names]
+                else:
+                    # For InputLayers
+                    input_tensors = input_layer_tensors[i]
+                    i = i+1
+
+                try:
+                    layer_output_function = backend.function(input_tensors, [layer.output])
+                    output_tensors = layer_output_function(input_tensors)[0]
+                except Exception as e:
+                    print(f'Error computing output for layer {layer_index}: {layer_name}')
+                    print(f'Error message: {str(e)}')
+
+                if hasattr(layer, 'output_names'):
+                    # Update input tensors dictionary for subsequent layers
+                    output_names = layer.output_names
+                    for output_name, output_tensor in zip(output_names, output_tensors):
+                        supply_input_tensors[output_name] = output_tensor
+
+                if len(input_tensors) != 0:
+                    print(f'Layer {layer_index}: {layer_name} input:')
+                    print(input_tensors)
+                    print('\n')
+                if len(output_tensor) != 0:
+                    print(f'Layer {layer_index}: {layer_name} output:')
+                    print(output_tensors)
+                    print('\n')
+
+        except Exception as e:
+            print("\n\nERROR : \t")
+            print(f"Error encountered while processing layer {layer_index} ({layer_name}): {str(e)}")
+            print("\n\n")
 
     def train_model(self, encoder_inputs, emotion_inputs, decoder_inputs, decoder_outputs, batch_size, epochs):
         self.model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
@@ -270,7 +329,7 @@ class DialogueGenerator:
         self.define_model()
 
         # Train the model
-        self.train_model(encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs, batch_size=64, epochs=10)           
+        self.train_model(encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs, batch_size=64, epochs=1)           
 
         # Save the tokenizer
         self.save_tokenizer()
