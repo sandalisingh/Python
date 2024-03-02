@@ -119,6 +119,9 @@ class DialogueGenerator:
         encoder_model = Model(inputs=chat_text, outputs=[lstm_output_seq, lstm_output_states], name="encoder")
         print("\nEncoder defined.")
 
+        print("Encoder Model Summary:")
+        encoder_model.summary()
+
         return encoder_model
 
     def define_decoder(self, encoder_outputs, encoder_states):
@@ -147,41 +150,48 @@ class DialogueGenerator:
         # print("Emotion embedding shape: ", emotion_embedding_output.shape)
 
         print("\n- LAYER 4 - EMBEDDING OF DECODER INPUT")
-        embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_decoder_input2')(prev_seq)
+        embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_prev_seq')(prev_seq)
         print("Decoder Embedding Output Shape: ", embedding_output.shape)
 
         print("\n- LAYER 5 - (ORDER) - POSITIONAL EMBEDDING")
         positional_output = Add(name='positional_embedding_of_decoder_2')([embedding_output, self.generate_positional_encoding()])
         print("Positional Embeddings of Decoder Output Shape: ", positional_output.shape)
 
-        print("\n- LAYER 6 - LSTM")
-        lstm_output,_,_ = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_prev_seq')(positional_output)
-        print("LSTM Shape: ", lstm_output.shape)
-        
-        print("\n- LAYER 7 - ATTENTION")
-        attention_output = Attention(name='attention_to_prev_and_encoder_outputs')([lstm_output, encoder_outputs])
+        # LAYER 3 - LSTM LAYER
+        print("\n- LAYER 4 - LSTM")
+        lstm_context = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='decoder_lstm1')
+       
+        # Initialize context memory with encoder final states
+        _, context_state_h, context_state_c = lstm_context(positional_output, initial_state=encoder_states)
+        context_state = [context_state_h, context_state_c]
+       
+        # LAYER 4 - LSTM
+        print("\n- LAYER 5 - LSTM")
+        lstm_decoder = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='decoder_lstm2')
+        decoder_outputs, _, _ = lstm_decoder(decoder_embedding, initial_state=context_state)
+        print("LSTM Decoder Output Shape: ", decoder_outputs.shape)
+       
+        # LAYER 5 - ATTENTION
+        print("\n- LAYER 5 - ATTENTION")
+        attention = Attention(name='attention_to_prev_and_encoder_outputs')
+        attention_output = attention([decoder_outputs, encoder_outputs])
         print("Attention Output Shape: ", attention_output.shape)
-
-        # print("\n- LAYER 4 - ADDING RESIDUAL CONNECTION")
-        # residual_output = Add(name='add_residual_connection_of_prev_seq')([positional_output, attention_output])
-        # print("Residual Addition Shape: ", residual_output.shape)
-
-        # print("\n- LAYER 5 - NORMALIZATION")
-        # normalised_output = LayerNormalization(name='normalization_of_prev_seq')(residual_output)
-        # print("Normalization Shape: ", normalised_output.shape)
-        
-        # print("\n- LAYER 6 - CONCATENATION")
-        # concat_output = Concatenate(axis=-1, name='cancat_decoder_outputs_and_prev')([decoder_outputs, normalised_output])
-        # print("Concatenation Output Shape: ", concat_output.shape)
+       
+        # LAYER 6 - CONCATENATION
+        print("\n- LAYER 6 - CONCATENATION")
+        concat_output = Concatenate(axis=-1, name='cancat_decoder_outputs_and_prev')([decoder_outputs, attention_output])
+        print("Concatenation Output Shape: ", concat_output.shape)
         
         print("\n- LAYER 8 - DENSE")
-        dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer')(attention_output)
+        dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer')(concat_output)
         print("Dense Output Shape: ", dense_output.shape)
         
         # Define the Keras Model with name "decoder"
         decoder_model = Model(inputs=[emotion, prev_seq], outputs=dense_output, name="decoder")
-
         print("\nDecoder defined.\n")
+
+        print("Decoder Model Summary:")
+        decoder_model.summary()
         
         return decoder_model
 
@@ -192,7 +202,7 @@ class DialogueGenerator:
         encoder_output_seq = encoder_model.outputs[0]
         encoder_output_states = encoder_model.outputs[1]
 
-        decoder_model = self.define_decoder(encoder_output_seq, encoder_output_states)  # Using encoder states and outputs
+        decoder_model = self.define_decoder(encoder_output_seq, encoder_output_states)  
     
         emotion = decoder_model.inputs[0]
         prev_seq = decoder_model.inputs[1]
@@ -203,10 +213,6 @@ class DialogueGenerator:
         print("\nModel defined.")
         print("Model Summary:")
         self.model.summary()
-        print("Encoder:")
-        encoder_model.summary()
-        print("Decoder:")
-        decoder_model.summary()
 
         # Assuming self.model is your Keras model
         plot_model(self.model, to_file='model_graph_plot.png', show_shapes=True, show_layer_names=True)
@@ -230,9 +236,12 @@ class DialogueGenerator:
                     # For non-InputLayers, receive input tensors from supply_tensors
                     input_names = layer.input_names
                     input_tensors = [supply_input_tensors[input_name] for input_name in input_names]
-                else:
+                elif isinstance(layer, InputLayer):
                     # For InputLayers
                     input_tensors = supply_input_tensors[layer.name]
+                else:
+                    # For layers with no input_names (e.g., Activation, Dropout), skip
+                    continue
 
                 try:
                     layer_output_function = backend.function(input_tensors, [layer.output])
