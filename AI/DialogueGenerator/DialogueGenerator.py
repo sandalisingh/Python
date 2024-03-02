@@ -124,7 +124,7 @@ class DialogueGenerator:
 
         return encoder_model
 
-    def define_decoder(self, encoder_outputs, encoder_states):
+    def define_decoder(self, encoder_output_seq, encoder_states):
         print("\n\n-> DECODER")
 
         print("\n- LAYER 0 - EMOTION INPUT")
@@ -135,55 +135,24 @@ class DialogueGenerator:
         prev_seq = Input(shape=(self.MAX_SEQ_LENGTH,), name='decoder_input2_prev_seq')
         print("Decoder Prev Seq Input Shape: ", prev_seq.shape)
 
-        # print("\n- LAYER 2 - RESHAPE EMOTION")
-        # repeat_emotion = RepeatVector(50)(emotion)
-        # flattened_emotion = Flatten()(repeat_emotion)
-        # print("Emotion tiled shape: ", flattened_emotion.shape)
-
-        # print("\n- LAYER 4 - ADD EMOTION EMBEDDING TO PREVIOUS SEQUENCE")
-        # emotion_embedding_output = Add()([prev_seq, flattened_emotion])
-        # print("Emotion embedding shape: ", emotion_embedding_output.shape)
-
-        # print("\n- LAYER 3 - EMOTION EMBEDDING")
-        # # Add the emotion value to each token in the previous sequence
-        # emotion_embedding_output = Add()([prev_seq, flattened_emotion])
-        # print("Emotion embedding shape: ", emotion_embedding_output.shape)
-
-        print("\n- LAYER 4 - EMBEDDING OF DECODER INPUT")
+        print("\n- LAYER 2 - EMBEDDING OF PREV SEQ")
         embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_prev_seq')(prev_seq)
         print("Decoder Embedding Output Shape: ", embedding_output.shape)
 
-        print("\n- LAYER 5 - (ORDER) - POSITIONAL EMBEDDING")
+        print("\n- LAYER 3 - (ORDER) - POSITIONAL EMBEDDING")
         positional_output = Add(name='positional_embedding_of_decoder_2')([embedding_output, self.generate_positional_encoding()])
         print("Positional Embeddings of Decoder Output Shape: ", positional_output.shape)
 
-        # LAYER 3 - LSTM LAYER
-        print("\n- LAYER 4 - LSTM")
-        lstm_context = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='decoder_lstm1')
+        print("\n- LAYER 4 - PROJECTION OF PREV SEQ")
+        projection_output = Dense(self.HIDDEN_DIM, name='projection_of_prev_seq')(positional_output)
+        print("Projection Shape: ", projection_output.shape)
        
-        # Initialize context memory with encoder final states
-        _, context_state_h, context_state_c = lstm_context(positional_output, initial_state=encoder_states)
-        context_state = [context_state_h, context_state_c]
-       
-        # LAYER 4 - LSTM
-        print("\n- LAYER 5 - LSTM")
-        lstm_decoder = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='decoder_lstm2')
-        decoder_outputs, _, _ = lstm_decoder(decoder_embedding, initial_state=context_state)
-        print("LSTM Decoder Output Shape: ", decoder_outputs.shape)
-       
-        # LAYER 5 - ATTENTION
-        print("\n- LAYER 5 - ATTENTION")
-        attention = Attention(name='attention_to_prev_and_encoder_outputs')
-        attention_output = attention([decoder_outputs, encoder_outputs])
+        print("\n- LAYER 4 - ATTENTION")
+        attention_output = Attention(name='attention_to_prev_and_encoder_outputs')([projection_output, encoder_output_seq])
         print("Attention Output Shape: ", attention_output.shape)
-       
-        # LAYER 6 - CONCATENATION
-        print("\n- LAYER 6 - CONCATENATION")
-        concat_output = Concatenate(axis=-1, name='cancat_decoder_outputs_and_prev')([decoder_outputs, attention_output])
-        print("Concatenation Output Shape: ", concat_output.shape)
         
-        print("\n- LAYER 8 - DENSE")
-        dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer')(concat_output)
+        print("\n- LAYER 5 - DENSE")
+        dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer')(attention_output)
         print("Dense Output Shape: ", dense_output.shape)
         
         # Define the Keras Model with name "decoder"
