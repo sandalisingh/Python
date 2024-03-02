@@ -70,6 +70,7 @@ class DialogueGenerator:
 
         # emotion list to vector
         emotion_inputs = np.array(emotion_inputs)
+        emotion_inputs = np.expand_dims(emotion_inputs, axis=1)
         
         print("Data preprocessed.")
         
@@ -115,16 +116,11 @@ class DialogueGenerator:
         print("LSTM Hidden State: ", state_h.shape)
         print("LSTM Cell State: ", state_c.shape)
 
-        # Define the Keras Model with name "encoder"
-        encoder_model = Model(inputs=chat_text, outputs=[lstm_output_seq, lstm_output_states], name="encoder")
         print("\nEncoder defined.")
 
-        print("Encoder Model Summary:")
-        encoder_model.summary()
+        return chat_text, lstm_output_seq, lstm_output_states
 
-        return encoder_model
-
-    def define_decoder(self, encoder_output_seq, encoder_states):
+    def define_decoder(self, chat_text, encoder_output_seq, encoder_states):
         print("\n\n-> DECODER")
 
         print("\n- LAYER 0 - EMOTION INPUT")
@@ -155,27 +151,13 @@ class DialogueGenerator:
         dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer')(attention_output)
         print("Dense Output Shape: ", dense_output.shape)
         
-        # Define the Keras Model with name "decoder"
-        decoder_model = Model(inputs=[emotion, prev_seq], outputs=dense_output, name="decoder")
         print("\nDecoder defined.\n")
-
-        print("Decoder Model Summary:")
-        decoder_model.summary()
         
-        return decoder_model
+        return emotion, prev_seq, dense_output
 
     def define_model(self):
-        encoder_model = self.define_encoder()
-
-        chat_text = encoder_model.inputs[0]
-        encoder_output_seq = encoder_model.outputs[0]
-        encoder_output_states = encoder_model.outputs[1]
-
-        decoder_model = self.define_decoder(encoder_output_seq, encoder_output_states)  
-    
-        emotion = decoder_model.inputs[0]
-        prev_seq = decoder_model.inputs[1]
-        output_seq = decoder_model.outputs[0]
+        chat_text, encoder_output_seq, encoder_output_states = self.define_encoder()
+        emotion, prev_seq, output_seq = self.define_decoder(chat_text, encoder_output_seq, encoder_output_states)  
 
         self.model = Model([chat_text, emotion, prev_seq], output_seq)
         
