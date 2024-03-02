@@ -4,9 +4,10 @@ import tensorflow as tf
 import pickle
 from enum import Enum
 from States import EmotionStates, get_emotion_index
-from tensorflow.keras.layers import Flatten, Input, InputLayer, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector
+from tensorflow.keras.layers import RepeatVector, Reshape, Flatten, Input, InputLayer, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector
 from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.callbacks import LambdaCallback
+from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras import backend
 from tensorflow.keras.utils import plot_model
 
@@ -68,11 +69,11 @@ class DialogueGenerator:
         emotion_inputs = [get_emotion_index(emo) for emo in emotion] 
         print("\nemotion_index[0] = ", emotion_inputs[0])
 
-        # emotion list to vector
+        # convert list to vector
         emotion_inputs = np.array(emotion_inputs)
         emotion_inputs = np.expand_dims(emotion_inputs, axis=1)
         
-        print("Data preprocessed.")
+        print("Data preprocessed.\n\n")
         
         return encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs
 
@@ -87,34 +88,34 @@ class DialogueGenerator:
 
         print("\n- LAYER 0 - INPUT")
         chat_text = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_chat_text')
-        print("Encoder Chat Text Input Shape: ", chat_text.shape)
+        print("Encoder Chat Text Input: ", chat_text)
         
         print("\n- LAYER 1 - EMBEDDING")
         embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_chat_text')(chat_text)
-        print("Encoder Embedding Output Shape: ", embedding_output.shape)
+        print("Encoder Embedding Output: ", embedding_output)
 
         print("\n- LAYER 2 - (ORDER) - POSITIONAL EMBEDDING")
         positional_output = Add(name='positional_embedding_of_chat_text')([embedding_output, self.generate_positional_encoding()])
-        print("Positional Embeddings Output Shape: ", positional_output.shape)
+        print("Positional Embeddings Output: ", positional_output)
 
         print("\n- LAYER 3 - (CONTEXT) - MULTI HEAD ATTENTION")
         attention_output = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='multi_head_attention_to_chat_text')(positional_output, key=positional_output, value=positional_output)
-        print("Attention Output Shape: ", attention_output.shape)
+        print("Attention Output: ", attention_output)
 
         print("\n- LAYER 4 - ADDING RESIDUAL CONNECTION")
         residual_output = Add(name='add_residual_connection_of_chat_text')([positional_output, attention_output])
-        print("Residual Addition Shape: ", residual_output.shape)
+        print("Residual Addition: ", residual_output)
 
         print("\n- LAYER 5 - NORMALIZATION")
         normalised_output = LayerNormalization(name='normalization_of_chat_text')(residual_output)
-        print("Normalization Shape: ", normalised_output.shape)
+        print("Normalization: ", normalised_output)
 
         print("\n- LAYER 6 - (HISTORY) - LSTM")
         lstm_output_seq, state_h, state_c = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_chat_text')(normalised_output)
         lstm_output_states = [state_h, state_c]
-        print("LSTM Seq: ", lstm_output_seq.shape)
-        print("LSTM Hidden State: ", state_h.shape)
-        print("LSTM Cell State: ", state_c.shape)
+        print("LSTM Seq: ", lstm_output_seq)
+        print("LSTM Hidden State: ", state_h)
+        print("LSTM Cell State: ", state_c)
 
         print("\nEncoder defined.")
 
@@ -125,31 +126,43 @@ class DialogueGenerator:
 
         print("\n- LAYER 0 - EMOTION INPUT")
         emotion = Input(shape=(1,), name='decoder_input1_emotion')
-        print("Decoder Emotion Input Shape: ", emotion.shape)
+        print("Decoder Emotion Input: ", emotion)
         
         print("\n- LAYER 1 - DECODER PREV SEQ INPUT")
         prev_seq = Input(shape=(self.MAX_SEQ_LENGTH,), name='decoder_input2_prev_seq')
-        print("Decoder Prev Seq Input Shape: ", prev_seq.shape)
+        print("Decoder Prev Seq Input: ", prev_seq)
 
         print("\n- LAYER 2 - EMBEDDING OF PREV SEQ")
         embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_prev_seq')(prev_seq)
-        print("Decoder Embedding Output Shape: ", embedding_output.shape)
+        print("Decoder Embedding Output: ", embedding_output)
 
         print("\n- LAYER 3 - (ORDER) - POSITIONAL EMBEDDING")
         positional_output = Add(name='positional_embedding_of_decoder_2')([embedding_output, self.generate_positional_encoding()])
-        print("Positional Embeddings of Decoder Output Shape: ", positional_output.shape)
+        print("Positional Embeddings of Decoder Output: ", positional_output)
 
         print("\n- LAYER 4 - PROJECTION OF PREV SEQ")
         projection_output = Dense(self.HIDDEN_DIM, name='projection_of_prev_seq')(positional_output)
-        print("Projection Shape: ", projection_output.shape)
+        print("Projection: ", projection_output)
        
-        print("\n- LAYER 4 - ATTENTION")
+        print("\n- LAYER 5 - ATTENTION")
         attention_output = Attention(name='attention_to_prev_and_encoder_outputs')([projection_output, encoder_output_seq])
-        print("Attention Output Shape: ", attention_output.shape)
+        print("Attention Output: ", attention_output)
+
+        print("\n- LAYER 6 - REPEAT EMOTION")
+        repeated_emotion = RepeatVector(self.MAX_SEQ_LENGTH, name='repeat_emotion')(emotion)
+        print("Repeated emotion: ", repeated_emotion)
+
+        print("\n- LAYER 7 - RESHAPE EMOTION")
+        reshaped_emotion = repeated_emotion * tf.cast(tf.ones((1, self.HIDDEN_DIM)), dtype=tf.float32)
+        print("Reshaped emotion: ", reshaped_emotion)
+
+        print("\n- LAYER 8 - ATTENTION")
+        emotion_attention_output = Attention(name='attention_to_emotion')([attention_output, reshaped_emotion])
+        print("Attention Output: ", attention_output)
         
-        print("\n- LAYER 5 - DENSE")
-        dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer')(attention_output)
-        print("Dense Output Shape: ", dense_output.shape)
+        print("\n- LAYER 9 - DENSE")
+        dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer', activation='softmax')(emotion_attention_output)
+        print("Dense Output: ", dense_output)
         
         print("\nDecoder defined.\n")
         
@@ -232,7 +245,7 @@ class DialogueGenerator:
         print("Texts concatenated.\n")
         
         # Create tokenizer and fit on all texts
-        self.tokenizer = tf.keras.preprocessing.text.Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
+        self.tokenizer = Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
         self.tokenizer.fit_on_texts(all_texts)
         self.tokenizer.word_index['<start>'] = self.tokenizer.num_words + 1
         self.tokenizer.word_index['<end>'] = self.tokenizer.num_words + 2
@@ -272,11 +285,16 @@ class DialogueGenerator:
         # Preprocess data
         encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs = self.preprocess_data(chat_text, text_response, emotion)
 
+        encoder_inputs_chat_text = tf.convert_to_tensor(encoder_inputs_chat_text)
+        emotion_inputs = tf.convert_to_tensor(emotion_inputs)
+        decoder_inputs = tf.convert_to_tensor(decoder_inputs)
+        decoder_outputs = tf.convert_to_tensor(decoder_outputs)
+
         print("\nAfter Preprocess...")
-        print("Shape of encoder_inputs_chat_text = ", encoder_inputs_chat_text.shape)
-        print("Shape of emotion_inputs = ", emotion_inputs.shape)
-        print("Shape of decoder_inputs = ", decoder_inputs.shape)
-        print("Shape of decoder_outputs = ", decoder_outputs.shape)
+        print("encoder_inputs_chat_text = ", encoder_inputs_chat_text)
+        print("emotion_inputs = ", emotion_inputs)
+        print("decoder_inputs = ", decoder_inputs)
+        print("decoder_outputs = ", decoder_outputs)
 
         # Define and compile the model
         self.define_model()
@@ -288,7 +306,7 @@ class DialogueGenerator:
         self.save_tokenizer()
 
         # Save the trained model
-        self.model.save("conversation_model.keras")
+        self.model.save("dialogue_generator_model.keras")
         print("Trained model saved.\n")
 
     def generate_response_with_greedy_approach(self, chat_text, emotion_str, max_seq_length):
