@@ -213,8 +213,6 @@ class DialogueGenerator:
 
     def print_layer_output(self, epoch, logs):
         chat_text, emotion, prev_seq, _ = self.preprocess_data([self.zeroth_row['chat_text']], [self.zeroth_row['text_response']], [self.zeroth_row['emotion']])
-        input_layer_tensors = [chat_text, emotion, prev_seq]
-        i=0
         supply_input_tensors = {
             'encoder_input_chat_text' : chat_text,
             'decoder_input1_emotion' : emotion,
@@ -234,8 +232,7 @@ class DialogueGenerator:
                     input_tensors = [supply_input_tensors[input_name] for input_name in input_names]
                 else:
                     # For InputLayers
-                    input_tensors = input_layer_tensors[i]
-                    i = i+1
+                    input_tensors = supply_input_tensors[layer.name]
 
                 try:
                     layer_output_function = backend.function(input_tensors, [layer.output])
