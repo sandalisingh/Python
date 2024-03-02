@@ -74,6 +74,11 @@ class DialogueGenerator:
         emotion_inputs = np.expand_dims(emotion_inputs, axis=1)
         
         print("Data preprocessed.\n\n")
+
+        encoder_inputs_chat_text = tf.convert_to_tensor(encoder_inputs_chat_text)
+        emotion_inputs = tf.convert_to_tensor(emotion_inputs)
+        decoder_inputs = tf.convert_to_tensor(decoder_inputs)
+        decoder_outputs = tf.convert_to_tensor(decoder_outputs)
         
         return encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs
 
@@ -192,30 +197,32 @@ class DialogueGenerator:
         try:
             # Loop through each layer and print input and output tensors
             for layer_index, layer in enumerate(self.model.layers):
+                print("\nLayer index = ", layer_index)
+                print("Layer = ", layer)
+
                 layer_name = layer.name if layer.name else f"UnnamedLayer_{layer_index}"
                 input_tensors = []
                 output_tensors = []
 
-                if hasattr(layer, 'input_names'):
-                    # For non-InputLayers, receive input tensors from supply_tensors
-                    input_names = layer.input_names
-                    input_tensors = [supply_input_tensors[input_name] for input_name in input_names]
-                elif isinstance(layer, InputLayer):
+                if isinstance(layer, InputLayer):
                     # For InputLayers
                     input_tensors = supply_input_tensors[layer.name]
-                else:
-                    # For layers with no input_names (e.g., Activation, Dropout), skip
-                    continue
 
-                if hasattr(layer, 'output_names'):
-                    layer_output_function = backend.function(input_tensors, [layer.output])
+                else:
+                    # For non-InputLayers
+                    print("\tinput = ", layer.input)
+                    input_name = layer.input.name
+                    print("\tinput names = ", input_name)
+                    input_tensors = supply_input_tensors[input_name] 
+                    print("\tinput tensor = ", input_tensors)
+                
+                    layer_output_function = backend.function(layer.input, [layer.output])
                     output_tensors = layer_output_function(input_tensors)[0]
 
-                    # Update input tensors dictionary for subsequent layers
-                    output_names = layer.output_names
-                    for output_name, output_tensor in zip(output_names, output_tensors):
-                        supply_input_tensors[output_name] = output_tensor
-
+                    # Update input tensors dictionary
+                    # for output_tensor in zip(output_tensors):
+                    supply_input_tensors[layer.name] = output_tensors
+                
                 if len(input_tensors) != 0:
                     print(f'Layer {layer_index}: {layer_name} input:')
                     print(input_tensors)
@@ -225,6 +232,7 @@ class DialogueGenerator:
                     print(output_tensors)
                     print('\n')
 
+                print("\nsupply_input_tensors = ",supply_input_tensors)
         except Exception as e:
             print("\n\nERROR : \t")
             print(f"Error encountered while processing layer {layer_index} ({layer_name}): {str(e)}")
@@ -284,11 +292,6 @@ class DialogueGenerator:
         
         # Preprocess data
         encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs = self.preprocess_data(chat_text, text_response, emotion)
-
-        encoder_inputs_chat_text = tf.convert_to_tensor(encoder_inputs_chat_text)
-        emotion_inputs = tf.convert_to_tensor(emotion_inputs)
-        decoder_inputs = tf.convert_to_tensor(decoder_inputs)
-        decoder_outputs = tf.convert_to_tensor(decoder_outputs)
 
         print("\nAfter Preprocess...")
         print("encoder_inputs_chat_text = ", encoder_inputs_chat_text)
