@@ -1,7 +1,0 @@
-# Ignore models
-*.keras
-*.h5
-*.joblib
-
-# Ignore compiled Python files
-*.pyc
