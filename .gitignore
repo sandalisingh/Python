@@ -1,0 +1,8 @@
+# Ignore files with .keras extension
+*.keras
+
+# Ignore files with .h5 extension
+*.h5
+
+# Ignore compiled Python files
+*.pyc
