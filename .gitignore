@@ -3,6 +3,7 @@
 
 # Ignore files with .h5 extension
 *.h5
+AI/DialogueGenerator/dialogue_generator_model.h5
 
 # Ignore compiled Python files
 *.pyc
