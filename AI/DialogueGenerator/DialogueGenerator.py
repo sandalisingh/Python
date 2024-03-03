@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import pickle
+import matplotlib.pyplot as plt
 from enum import Enum
 from States import EmotionStates, get_emotion_index
 from tensorflow.keras.layers import RepeatVector, Reshape, Flatten, Input, InputLayer, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector
@@ -19,6 +20,7 @@ class DialogueGenerator:
         self.EMBEDDING_DIM = 300  # Embedding dimension
         self.HIDDEN_DIM = 512     # Hidden dimension for LSTM layers
         self.EMOTION_SIZE = 1
+        self.model = None
            
     def generate_positional_encoding(self):
         position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
@@ -175,17 +177,14 @@ class DialogueGenerator:
         print("Normalization: ", normalised_output)
 
         print("\n- LAYER 6 - (HISTORY) - LSTM")
-        lstm_output_seq, state_h, state_c = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_chat_text')(normalised_output)
-        lstm_output_states = [state_h, state_c]
+        lstm_output_seq, _, _ = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_chat_text')(normalised_output)
         print("LSTM Seq: ", lstm_output_seq)
-        print("LSTM Hidden State: ", state_h)
-        print("LSTM Cell State: ", state_c)
 
         print("\nEncoder defined.")
 
-        return chat_text, lstm_output_seq, lstm_output_states
+        return chat_text, lstm_output_seq
 
-    def define_decoder(self, chat_text, encoder_output_seq, encoder_states):
+    def define_decoder(self, chat_text, encoder_output_seq):
         print("\n\n-> DECODER")
 
         print("\n- LAYER 0 - EMOTION INPUT")
@@ -233,17 +232,25 @@ class DialogueGenerator:
         return emotion, prev_seq, dense_output
 
     def define_model(self):
-        chat_text, encoder_output_seq, encoder_output_states = self.define_encoder()
-        emotion, prev_seq, output_seq = self.define_decoder(chat_text, encoder_output_seq, encoder_output_states)  
+        if self.model is None:
+            chat_text, encoder_output_seq = self.define_encoder()
+            emotion, prev_seq, output_seq = self.define_decoder(chat_text, encoder_output_seq) 
 
-        self.model = Model([chat_text, emotion, prev_seq], output_seq)
-        
-        print("\nModel defined.")
-        print("Model Summary:")
-        self.model.summary()
+            print("Defining model...")
+            print("chat_text shape = ", chat_text.shape)
+            print("encoder_output_seq shape = ", encoder_output_seq.shape)
+            print("emotion shape = ", emotion.shape)
+            print("prev_seq shape = ", prev_seq.shape)
+            print("output_seq shape = ", output_seq.shape)
 
-        # Plot the model graph with colors and save it
-        plot_model(self.model, to_file='model_graph_plot.png', show_shapes=True, show_layer_names=True)
+            self.model = Model([chat_text, emotion, prev_seq], output_seq)
+            
+            print("\nModel defined.")
+            print("Model Summary:")
+            self.model.summary()
+
+            # Plot the model graph with colors and save it
+            plot_model(self.model, to_file='model_graph_plot.png', show_shapes=True, show_layer_names=True)
 
     #   OUTPUT INSPECTION
 
@@ -264,83 +271,30 @@ class DialogueGenerator:
         print("-> emotion = ", emotion)
         print("-> text response = ", text_response)
 
-        chat_text, emotion, prev_seq, _ = self.preprocess_data(chat_text, text_response, emotion)
+        chat_text, emotion, prev_seq, _ = self.preprocess_data(chat_text, text_response, emotion)   
 
-        # Define and compile the model
         self.define_model()
 
-        supply_input_tensors = {
-            'encoder_input_chat_text' : chat_text,
-            'decoder_input1_emotion' : emotion,
-            'decoder_input2_prev_seq' : prev_seq
-        }
+        # Create a model to extract intermediate outputs
+        intermediate_model = Model(inputs=self.model.inputs, outputs=[layer.output for layer in self.model.layers])
 
-        try:
-            # Loop through each layer and print input and output tensors
-            for layer_index, layer in enumerate(self.model.layers):
-                print("\nLayer index = ", layer_index)
-                print("Layer = ", layer.name)
+        # Get intermediate outputs
+        intermediate_results = intermediate_model.predict([chat_text, emotion, prev_seq])
 
-                layer_name = layer.name if layer.name else f"UnnamedLayer_{layer_index}"
-                input_tensors = []
-                output_tensors = []
-                input_names = []
-                input_shapes = []
+        # Print intermediate output tensors along with the layer name and index for the first row
+        for i, (layer, result) in enumerate(zip(self.model.layers, intermediate_results)):
+            layer_name = layer.name
+            print(f"\nLayer {i} - '{layer_name}':")
+            print(result[0])  # Printing only the first row of the tensor
 
-                if isinstance(layer, InputLayer):
-                    # For InputLayers
-                    input_tensors = supply_input_tensors[layer.name]
-
-                else:
-                    # For non-InputLayers
-
-                    print("\nInput = ", layer.input)
-
-                    if hasattr(layer,'input_name'):
-                        print("\nExpected input names = ", layer.input_name)
-                    if hasattr(layer,'input_names'):
-                        print("\nExpected input names = ", layer.input_names)
-                    if hasattr(layer,'input_shape'):
-                        print("\nExpected input shapes = ", layer.input_shape)
-                    if hasattr(layer, 'inbound_layers'):
-                        print("\nInbound Nodes  = ", layer._inbound_nodes)
-
-                    print("\nOuput = ", layer.output)
-
-                    if isinstance(layer.input, list):
-                        for node in layer._inbound_nodes:
-                            prev_layer = node.inbound_layers
-                            print("\nPrev layer = ", prev_layer)
-                            input_names.append(prev_layer.name)
-                    else:
-                        input_names = [layer.input.name]
-
-                    input_tensors = [supply_input_tensors[input_name] for input_name in input_names] 
-                    print("\nRecieved input tensors = ", input_tensors)
-                
-                    layer_output_function = backend.function(layer.input, [layer.output])
-                    output_tensors = layer_output_function(input_tensors)[0]
-                    output_tensors = tf.convert_to_tensor(output_tensors)
-
-                    # Update input tensors dictionary
-                    # for output_tensor in zip(output_tensors):
-                    supply_input_tensors[layer.name] = output_tensors
-                
-                if len(output_tensors) != 0:
-                    print('Output tensors : ')
-                    print(output_tensors)
-                    print('\n')
-
-                print("\nSupply_input_tensors = ",supply_input_tensors)
-        
-        except Exception as e:
-            print("\n\nERROR :")
-            print("Error encountered:", e)
-            print("Layer Index:", layer_index)
-            print("Layer Name:", layer.name)
-            print("Input Shape Expected:", layer.input_shape)
-            print()
-            raise e
+            # Visualize the tensor
+            # plt.figure(figsize=(10, 5))
+            # plt.plot(result[0])
+            # plt.title(f'Layer {i} - {layer_name}')
+            # plt.xlabel('Index')
+            # plt.ylabel('Value')
+            # plt.grid(True)
+            # plt.show()
 
     #   TRAINING
 
