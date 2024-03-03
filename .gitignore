@@ -1,8 +1,7 @@
-# Ignore files with .keras extension
+# Ignore models
 *.keras
-
-# Ignore files with .h5 extension
 *.h5
+*.joblib
 
 # Ignore compiled Python files
 *.pyc
