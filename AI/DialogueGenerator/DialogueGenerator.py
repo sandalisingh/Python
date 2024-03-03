@@ -299,14 +299,8 @@ class DialogueGenerator:
             print(f"\nLayer {i} - '{layer_name}':")
             print(result[0])  # Printing only the first row of the tensor
 
-            # Check if the current layer is an attention layer
-            if isinstance(layer, AttentionLayer):
-                attention_scores = layer.attention_scores
-                # Visualize the attention scores
-                self.plot_attention_scores(attention_scores[0], chat_text[0], text_response[0])
-            else:
-                # Visualize the tensor
-                self.visualize_tensor(i, layer_name, result)
+            # Visualize the tensor
+            self.visualize_tensor(i, layer_name, result)
 
     #   TRAINING
 
