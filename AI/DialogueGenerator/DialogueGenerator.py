@@ -19,10 +19,58 @@ class DialogueGenerator:
         self.EMBEDDING_DIM = 300  # Embedding dimension
         self.HIDDEN_DIM = 512     # Hidden dimension for LSTM layers
         self.EMOTION_SIZE = 1
+           
+    def generate_positional_encoding(self):
+        position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
+        position_encoding = position_encoding * tf.cast(tf.ones((1, self.EMBEDDING_DIM)), dtype=tf.float32)
+        position_encoding = tf.expand_dims(position_encoding, 0)
+        return position_encoding
 
+    #   TOKENIZER
+
+    def create_tokenizer(self, chat_text, text_response):
+        # Concatenate chat_text and text_response
+        all_texts = chat_text + text_response
+        print("Texts concatenated.\n")
+        
+        # Create tokenizer and fit on all texts
+        self.tokenizer = Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
+        self.tokenizer.fit_on_texts(all_texts)
+        self.tokenizer.word_index['<start>'] = self.tokenizer.num_words + 1
+        self.tokenizer.word_index['<end>'] = self.tokenizer.num_words + 2
+        
+        # Manually add <start> and <end> to index_word
+        self.tokenizer.index_word[self.tokenizer.word_index['<start>']] = '<start>'
+        self.tokenizer.index_word[self.tokenizer.word_index['<end>']] = '<end>'
+        
+        print("Tokenizer created and fitted on texts.")
+        print("Tokenizer size = ", self.VOCAB_SIZE)
+
+    def save_tokenizer(self):
+        tokenizer_path = "tokenizer.pkl"
+        with open(tokenizer_path, 'wb') as tokenizer_file:
+            pickle.dump(self.tokenizer, tokenizer_file)
+        print("\nTokenizer saved at ", tokenizer_path)
+        return tokenizer_file
+    
+    #   DATA HANDLING
+
+    def load_dataframe(self):
+        df = pd.read_csv('Conversation3.csv')
+        self.display_top_rows(df)
+        self.zeroth_row = df.iloc[0]
+        return df
+    
     def display_top_rows(self, df):
         print("Top 5 rows of the dataset:\n%s", df.head())
-            
+ 
+    def extract_data_from_dataframe(self, df):
+        chat_text = df['chat_text'].tolist()
+        text_response = df['text_response'].tolist()
+        emotion = df['emotion'].tolist()
+        print("\nData extracted from DataFrame.")
+        return chat_text, text_response, emotion
+
     def preprocess_data(self, chat_text, text_response, emotion):
         print("\n\n-> PREPROCESS DATA")
 
@@ -79,14 +127,25 @@ class DialogueGenerator:
         emotion_inputs = tf.convert_to_tensor(emotion_inputs)
         decoder_inputs = tf.convert_to_tensor(decoder_inputs)
         decoder_outputs = tf.convert_to_tensor(decoder_outputs)
+
+        print("\nAfter Preprocess...")
+        print("encoder_inputs_chat_text = ", encoder_inputs_chat_text)
+        print("emotion_inputs = ", emotion_inputs)
+        print("decoder_inputs = ", decoder_inputs)
+        print("decoder_outputs = ", decoder_outputs)
         
         return encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs
 
-    def generate_positional_encoding(self):
-        position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
-        position_encoding = position_encoding * tf.cast(tf.ones((1, self.EMBEDDING_DIM)), dtype=tf.float32)
-        position_encoding = tf.expand_dims(position_encoding, 0)
-        return position_encoding
+    def prepare_data(self):
+        df = self.load_dataframe()
+        
+        # Extract data from the DataFrame
+        chat_text, text_response, emotion = self.extract_data_from_dataframe(df)
+        
+        self.create_tokenizer(chat_text, text_response)
+        return chat_text, text_response, emotion
+
+    #   MODEL ARCHITECTURE DEFINITION
 
     def define_encoder(self):
         print("\n\n-> ENCODER")
@@ -185,9 +244,31 @@ class DialogueGenerator:
 
         # Plot the model graph with colors and save it
         plot_model(self.model, to_file='model_graph_plot.png', show_shapes=True, show_layer_names=True)
+
+    #   OUTPUT INSPECTION
+
+    def inspect_layer_outputs(self):
+        chat_text, text_response, emotion = self.prepare_data()
         
-    def print_layer_output(self, epoch, logs):
-        chat_text, emotion, prev_seq, _ = self.preprocess_data([self.zeroth_row['chat_text']], [self.zeroth_row['text_response']], [self.zeroth_row['emotion']])
+        # Enable eager execution
+        tf.config.experimental_run_functions_eagerly(True)  
+
+        # Randomly select an index
+        random_index = np.random.randint(0, len(chat_text))
+
+        chat_text = [chat_text[random_index]]
+        emotion = [emotion[random_index]]
+        text_response = [text_response[random_index]]
+
+        print("\nINPUT:\n-> chat text = ", chat_text)
+        print("-> emotion = ", emotion)
+        print("-> text response = ", text_response)
+
+        chat_text, emotion, prev_seq, _ = self.preprocess_data(chat_text, text_response, emotion)
+
+        # Define and compile the model
+        self.define_model()
+
         supply_input_tensors = {
             'encoder_input_chat_text' : chat_text,
             'decoder_input1_emotion' : emotion,
@@ -198,11 +279,13 @@ class DialogueGenerator:
             # Loop through each layer and print input and output tensors
             for layer_index, layer in enumerate(self.model.layers):
                 print("\nLayer index = ", layer_index)
-                print("Layer = ", layer)
+                print("Layer = ", layer.name)
 
                 layer_name = layer.name if layer.name else f"UnnamedLayer_{layer_index}"
                 input_tensors = []
                 output_tensors = []
+                input_names = []
+                input_shapes = []
 
                 if isinstance(layer, InputLayer):
                     # For InputLayers
@@ -210,94 +293,70 @@ class DialogueGenerator:
 
                 else:
                     # For non-InputLayers
-                    print("\tinput = ", layer.input)
-                    input_name = layer.input.name
-                    print("\tinput names = ", input_name)
-                    input_tensors = supply_input_tensors[input_name] 
-                    print("\tinput tensor = ", input_tensors)
+
+                    print("\nInput = ", layer.input)
+
+                    if hasattr(layer,'input_name'):
+                        print("\nExpected input names = ", layer.input_name)
+                    if hasattr(layer,'input_names'):
+                        print("\nExpected input names = ", layer.input_names)
+                    if hasattr(layer,'input_shape'):
+                        print("\nExpected input shapes = ", layer.input_shape)
+                    if hasattr(layer, 'inbound_layers'):
+                        print("\nInbound Nodes  = ", layer._inbound_nodes)
+
+                    print("\nOuput = ", layer.output)
+
+                    if isinstance(layer.input, list):
+                        for node in layer._inbound_nodes:
+                            prev_layer = node.inbound_layers
+                            print("\nPrev layer = ", prev_layer)
+                            input_names.append(prev_layer.name)
+                    else:
+                        input_names = [layer.input.name]
+
+                    input_tensors = [supply_input_tensors[input_name] for input_name in input_names] 
+                    print("\nRecieved input tensors = ", input_tensors)
                 
                     layer_output_function = backend.function(layer.input, [layer.output])
                     output_tensors = layer_output_function(input_tensors)[0]
+                    output_tensors = tf.convert_to_tensor(output_tensors)
 
                     # Update input tensors dictionary
                     # for output_tensor in zip(output_tensors):
                     supply_input_tensors[layer.name] = output_tensors
                 
-                if len(input_tensors) != 0:
-                    print(f'Layer {layer_index}: {layer_name} input:')
-                    print(input_tensors)
-                    print('\n')
                 if len(output_tensors) != 0:
-                    print(f'Layer {layer_index}: {layer_name} output:')
+                    print('Output tensors : ')
                     print(output_tensors)
                     print('\n')
 
-                print("\nsupply_input_tensors = ",supply_input_tensors)
+                print("\nSupply_input_tensors = ",supply_input_tensors)
+        
         except Exception as e:
-            print("\n\nERROR : \t")
-            print(f"Error encountered while processing layer {layer_index} ({layer_name}): {str(e)}")
-            print("\n\n")
+            print("\n\nERROR :")
+            print("Error encountered:", e)
+            print("Layer Index:", layer_index)
+            print("Layer Name:", layer.name)
+            print("Input Shape Expected:", layer.input_shape)
+            print()
+            raise e
+
+    #   TRAINING
 
     def train_model(self, encoder_inputs, emotion_inputs, decoder_inputs, decoder_outputs, batch_size, epochs):
         self.model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
         
-        print_callback = LambdaCallback(on_epoch_end=self.print_layer_output)
         self.model.fit([encoder_inputs, emotion_inputs, decoder_inputs], decoder_outputs, batch_size=batch_size, 
-            epochs=epochs, validation_split=0.2, callbacks=[print_callback])
+            epochs=epochs, validation_split=0.2)
         
         print("\nModel trained.\n")
-        
-    def create_tokenizer(self, chat_text, text_response):
-        # Concatenate chat_text and text_response
-        all_texts = chat_text + text_response
-        print("Texts concatenated.\n")
-        
-        # Create tokenizer and fit on all texts
-        self.tokenizer = Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
-        self.tokenizer.fit_on_texts(all_texts)
-        self.tokenizer.word_index['<start>'] = self.tokenizer.num_words + 1
-        self.tokenizer.word_index['<end>'] = self.tokenizer.num_words + 2
-        
-        # Manually add <start> and <end> to index_word
-        self.tokenizer.index_word[self.tokenizer.word_index['<start>']] = '<start>'
-        self.tokenizer.index_word[self.tokenizer.word_index['<end>']] = '<end>'
-        
-        print("Tokenizer created and fitted on texts.")
-        print("Tokenizer size = ", self.VOCAB_SIZE)
-
-    def save_tokenizer(self):
-        tokenizer_path = "tokenizer.pkl"
-        with open(tokenizer_path, 'wb') as tokenizer_file:
-            pickle.dump(self.tokenizer, tokenizer_file)
-        print("\nTokenizer saved at ", tokenizer_path)
-        return tokenizer_file
-
-    def extract_data_from_dataframe(self, df):
-        chat_text = df['chat_text'].tolist()
-        text_response = df['text_response'].tolist()
-        emotion = df['emotion'].tolist()
-        print("\nData extracted from DataFrame.")
-        return chat_text, text_response, emotion
-
+ 
     def create_train_and_save_model(self):
-        # Load the dataset
-        df = pd.read_csv('Conversation3.csv')
-        self.display_top_rows(df)
-        self.zeroth_row = df.iloc[0]
-
-        # Extract data from the DataFrame
-        chat_text, text_response, emotion = self.extract_data_from_dataframe(df)
-
-        self.create_tokenizer(chat_text, text_response)
+        chat_text, text_response, emotion = self.prepare_data()
         
         # Preprocess data
         encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs = self.preprocess_data(chat_text, text_response, emotion)
-
-        print("\nAfter Preprocess...")
-        print("encoder_inputs_chat_text = ", encoder_inputs_chat_text)
-        print("emotion_inputs = ", emotion_inputs)
-        print("decoder_inputs = ", decoder_inputs)
-        print("decoder_outputs = ", decoder_outputs)
 
         # Define and compile the model
         self.define_model()
@@ -312,11 +371,13 @@ class DialogueGenerator:
         self.model.save("dialogue_generator_model.keras")
         print("Trained model saved.\n")
 
+    #   GENERTE RESPONSE
+
     def generate_response_with_greedy_approach(self, chat_text, emotion_str, max_seq_length):
         print("\n\n-> GENERATE RESPONSE")
 
         # Preprocess input text
-        chat_text_sequence = tokenizer.texts_to_sequences([chat_text])
+        chat_text_sequence = self.tokenizer.texts_to_sequences([chat_text])
         print("Chat text sequence = ", chat_text_sequence)
         chat_text_sequence = tf.keras.preprocessing.sequence.pad_sequences(chat_text_sequence, maxlen=max_seq_length, padding='post')
         print("Padded chat text sequence = ", chat_text_sequence)
@@ -336,7 +397,7 @@ class DialogueGenerator:
         
         # Initialize decoder input with a start token
         target_seq = np.zeros((1, 1))
-        target_seq[0, 0] = tokenizer.word_index['<start>']
+        target_seq[0, 0] = self.tokenizer.word_index['<start>']
         print("Target sequence = ", target_seq)
         
         stop_condition = False
@@ -357,7 +418,7 @@ class DialogueGenerator:
 
             # Iterate over the top three indices and get the corresponding tokens
             for index in top_three_indices:
-                token = tokenizer.index_word.get(index, None)
+                token = self.tokenizer.index_word.get(index, None)
                 if token is not None:
                     top_three_tokens.append((token, output_tokens[0, -1, index]))
 
