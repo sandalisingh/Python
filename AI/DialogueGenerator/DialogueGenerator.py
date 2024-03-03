@@ -2,6 +2,7 @@ import pandas as pd
 import numpy as np
 import tensorflow as tf
 import pickle
+import os
 import matplotlib.pyplot as plt
 from enum import Enum
 from States import EmotionStates, get_emotion_index
@@ -11,6 +12,7 @@ from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras import backend
 from tensorflow.keras.utils import plot_model
+# from tf_keras_vis import heatmap
 
 class DialogueGenerator:
 
@@ -299,6 +301,11 @@ class DialogueGenerator:
             print(f"\nLayer {i} - '{layer_name}':")
             print(result[0])  # Printing only the first row of the tensor
 
+            # if isinstance(layer, Attention):
+            #     # Create and save the heatmap
+            #     heatmap(model, layer_name=layer_name, to_file=f"{layer_name}_heatmap.png", input_tensor=layer.input_tensor, write_grads=False)
+            #     print(f"Created heatmap for layer: {layer_name}")
+
             # Visualize the tensor
             self.visualize_tensor(i, layer_name, result)
 
@@ -328,7 +335,9 @@ class DialogueGenerator:
         self.save_tokenizer()
 
         # Save the trained model
-        self.model.save("dialogue_generator_model.keras")
+        model_dir = "dialogue_generator_model"
+        os.makedirs(model_dir, exist_ok=True)
+        tf.saved_model.save(self.model, model_dir)
         print("Trained model saved.\n")
 
     #   GENERTE RESPONSE
