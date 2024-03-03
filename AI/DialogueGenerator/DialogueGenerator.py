@@ -12,6 +12,7 @@ from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras import backend
 from tensorflow.keras.utils import plot_model
+# from keras_vis import heatmap
 # from tf_keras_vis import heatmap
 
 class DialogueGenerator:
@@ -22,6 +23,7 @@ class DialogueGenerator:
         self.EMBEDDING_DIM = 300  # Embedding dimension
         self.HIDDEN_DIM = 512     # Hidden dimension for LSTM layers
         self.EMOTION_SIZE = 1
+        self.tokenizer = None
         self.model = None
            
     def generate_positional_encoding(self):
@@ -213,20 +215,32 @@ class DialogueGenerator:
         attention_output = Attention(name='attention_to_prev_and_encoder_outputs')([projection_output, encoder_output_seq])
         print("Attention Output: ", attention_output)
 
-        print("\n- LAYER 6 - REPEAT EMOTION")
+        print("\n- LAYER 6 - ADDING RESIDUAL CONNECTION")
+        residual_prev_seq_output = Add(name='add_residual_connection_of_prev_seq')([projection_output, attention_output])
+        print("Residual Addition: ", residual_prev_seq_output)
+
+        print("\n- LAYER 7 - REPEAT EMOTION")
         repeated_emotion = RepeatVector(self.MAX_SEQ_LENGTH, name='repeat_emotion')(emotion)
         print("Repeated emotion: ", repeated_emotion)
 
-        print("\n- LAYER 7 - RESHAPE EMOTION")
+        print("\n- LAYER 8 - RESHAPE EMOTION")
         reshaped_emotion = repeated_emotion * tf.cast(tf.ones((1, self.HIDDEN_DIM)), dtype=tf.float32)
         print("Reshaped emotion: ", reshaped_emotion)
 
-        print("\n- LAYER 8 - ATTENTION")
-        emotion_attention_output = Attention(name='attention_to_emotion')([attention_output, reshaped_emotion])
+        print("\n- LAYER 9 - ATTENTION")
+        emotion_attention_output = Attention(name='attention_to_emotion')([residual_prev_seq_output, reshaped_emotion])
         print("Attention Output: ", attention_output)
+
+        print("\n- LAYER 10 - ADDING RESIDUAL CONNECTION")
+        residual_emotion_output = Add(name='add_residual_connection_of_emotion')([emotion_attention_output, reshaped_emotion])
+        print("Residual Addition: ", residual_emotion_output)
+
+        print("\n- LAYER 11 - NORMALIZATION")
+        normalised_output = LayerNormalization(name='normalization_of_seq')(residual_emotion_output)
+        print("Normalization: ", normalised_output)
         
-        print("\n- LAYER 9 - DENSE")
-        dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer', activation='softmax')(emotion_attention_output)
+        print("\n- LAYER 12 - DENSE")
+        dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer', activation='softmax')(normalised_output)
         print("Dense Output: ", dense_output)
         
         print("\nDecoder defined.\n")

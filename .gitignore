@@ -3,6 +3,9 @@
 *.h5
 *.joblib
 *.npy
+*.pkl
+
+AI/DialogueGenerator/dialogue_generator_model/
 
 # Ignore datasets
 *.csv
@@ -13,4 +16,4 @@
 
 # Ignore compiled Python files
 *.pyc
-*__pycache__
+__pycache__/
