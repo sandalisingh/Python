@@ -2,6 +2,15 @@
 *.keras
 *.h5
 *.joblib
+*.npy
+
+# Ignore datasets
+*.csv
+*.xlsx
+
+# Ignore images
+*.png
 
 # Ignore compiled Python files
 *.pyc
+*__pycache__
