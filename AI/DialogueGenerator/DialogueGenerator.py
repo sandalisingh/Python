@@ -143,10 +143,10 @@ class DialogueGenerator:
         
         print("Data preprocessed.\n\n")
 
-        encoder_inputs_chat_text = tf.convert_to_tensor(encoder_inputs_chat_text)
-        emotion_inputs = tf.convert_to_tensor(emotion_inputs)
-        decoder_inputs = tf.convert_to_tensor(decoder_inputs)
-        decoder_outputs = tf.convert_to_tensor(decoder_outputs)
+        encoder_inputs_chat_text = tf.convert_to_tensor(encoder_inputs_chat_text, dtype=tf.float32)
+        emotion_inputs = tf.convert_to_tensor(emotion_inputs, dtype=tf.float32)
+        decoder_inputs = tf.convert_to_tensor(decoder_inputs, dtype=tf.float32)
+        decoder_outputs = tf.convert_to_tensor(decoder_outputs, dtype=tf.float32)
 
         print("\nAfter Preprocess...")
         print("encoder_inputs_chat_text = ", encoder_inputs_chat_text)
@@ -315,9 +315,7 @@ class DialogueGenerator:
             dot.render(to_file, format='png')
         else:
             dot.view()
- 
-    #   OUTPUT INSPECTION
-
+    
     def visualize_tensor(self, layer_index, layer_name, tensor):
         try:  
             plt.figure(figsize=(10, 5))
@@ -329,6 +327,8 @@ class DialogueGenerator:
             plt.show()
         except Exception as e:
             print(f"Layer {layer_index} - {layer_name}: Error occurred during visualization - {str(e)}")
+
+    #   OUTPUT INSPECTION
 
     def inspect_layer_outputs(self):
         chat_text, text_response, emotion = self.prepare_data()
@@ -416,7 +416,7 @@ class DialogueGenerator:
         stop_condition = False
         decoded_sentence = ''
         while not stop_condition:
-            output_tokens = self.model([conversation_history, emotion_input, target_seq])
+            output_tokens = output_tokens = self.model([conversation_history, emotion_input, target_seq], training=False, mask=None)
             print("\n\nOutput tokens[0] = ", output_tokens[0])
 
             # greedy decoding -  selecting the token with the highest probability
