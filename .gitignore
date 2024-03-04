@@ -20,6 +20,4 @@ __pycache__/
 
 # Ignore .DS_Store files
 .DS_Store
-
-# Ignore the entire env folder
-/my_env/
+/AI/DialogueGenerator/my_env
