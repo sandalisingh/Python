@@ -4,6 +4,7 @@ import tensorflow as tf
 import pickle
 import os
 import matplotlib.pyplot as plt
+import graphviz
 from enum import Enum
 from States import EmotionStates, get_emotion_index
 from tensorflow.keras.layers import RepeatVector, Reshape, Flatten, Input, InputLayer, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector
@@ -11,7 +12,7 @@ from tensorflow.keras.models import Model, Sequential
 from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras import backend
-from tensorflow.keras.utils import plot_model
+# from tensorflow.keras.utils import plot_model
 # from keras_vis import heatmap
 # from tf_keras_vis import heatmap
 
@@ -23,8 +24,20 @@ class DialogueGenerator:
         self.EMBEDDING_DIM = 300  # Embedding dimension
         self.HIDDEN_DIM = 512     # Hidden dimension for LSTM layers
         self.EMOTION_SIZE = 1
-        self.tokenizer = None
-        self.model = None
+
+        try:
+            with open("tokenizer.pkl", 'rb') as tokenizer_file:
+                self.tokenizer = pickle.load(tokenizer_file)
+            print("Tokenizer loaded.")
+        except:
+            self.tokenizer = None
+
+        try:
+            # Load the model
+            model_path = 'dialogue_generator_model'  # Path to the directory where the model is saved
+            self.model = tf.saved_model.load(model_path)
+        except:
+            self.model = None
            
     def generate_positional_encoding(self):
         position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
@@ -35,22 +48,23 @@ class DialogueGenerator:
     #   TOKENIZER
 
     def create_tokenizer(self, chat_text, text_response):
-        # Concatenate chat_text and text_response
-        all_texts = chat_text + text_response
-        print("Texts concatenated.\n")
-        
-        # Create tokenizer and fit on all texts
-        self.tokenizer = Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
-        self.tokenizer.fit_on_texts(all_texts)
-        self.tokenizer.word_index['<start>'] = self.tokenizer.num_words + 1
-        self.tokenizer.word_index['<end>'] = self.tokenizer.num_words + 2
-        
-        # Manually add <start> and <end> to index_word
-        self.tokenizer.index_word[self.tokenizer.word_index['<start>']] = '<start>'
-        self.tokenizer.index_word[self.tokenizer.word_index['<end>']] = '<end>'
-        
-        print("Tokenizer created and fitted on texts.")
-        print("Tokenizer size = ", self.VOCAB_SIZE)
+        if self.tokenizer is None:
+            # Concatenate chat_text and text_response
+            all_texts = chat_text + text_response
+            print("Texts concatenated.\n")
+            
+            # Create tokenizer and fit on all texts
+            self.tokenizer = Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
+            self.tokenizer.fit_on_texts(all_texts)
+            self.tokenizer.word_index['<start>'] = self.tokenizer.num_words + 1
+            self.tokenizer.word_index['<end>'] = self.tokenizer.num_words + 2
+            
+            # Manually add <start> and <end> to index_word
+            self.tokenizer.index_word[self.tokenizer.word_index['<start>']] = '<start>'
+            self.tokenizer.index_word[self.tokenizer.word_index['<end>']] = '<end>'
+            
+            print("Tokenizer created and fitted on texts.")
+            print("Tokenizer size = ", self.VOCAB_SIZE)
 
     def save_tokenizer(self):
         tokenizer_path = "tokenizer.pkl"
@@ -266,8 +280,42 @@ class DialogueGenerator:
             self.model.summary()
 
             # Plot the model graph with colors and save it
-            plot_model(self.model, to_file='model_graph_plot.png', show_shapes=True, show_layer_names=True)
+            # plot_model(self.model, to_file='model_graph_plot.png', show_shapes=True, show_layer_names=True)
+            self.generate_model_arch_plot('model_graph_plot.png')
 
+    #   VISUALIZATION
+
+    def generate_model_arch_plot(self, to_file):
+        # Create a new graph
+        dot = graphviz.Digraph()
+
+        # Add nodes
+        dot.node('InputLayer', color='lightblue')
+        dot.node('Embedding', color='royalblue')
+        dot.node('Add', color='lightcoral')
+        dot.node('MultiHeadAttention', color='gold')
+        dot.node('LayerNormalization', color='lightgreen')
+        dot.node('LSTM', color='coral')
+        dot.node('Dense', color='lightgreen')
+        dot.node('RepeatVector', color='mediumpurple')
+        dot.node('Attention', color='gold')
+
+        # Add edges
+        dot.edge('InputLayer', 'Embedding')
+        dot.edge('Embedding', 'Add')
+        dot.edge('Add', 'MultiHeadAttention')
+        dot.edge('MultiHeadAttention', 'LayerNormalization')
+        dot.edge('LayerNormalization', 'LSTM')
+        dot.edge('LSTM', 'Dense')
+        dot.edge('Dense', 'RepeatVector')
+        dot.edge('RepeatVector', 'Attention')
+
+        # Save the graph to a file or view directly
+        if to_file:
+            dot.render(to_file, format='png')
+        else:
+            dot.view()
+ 
     #   OUTPUT INSPECTION
 
     def visualize_tensor(self, layer_index, layer_name, tensor):
@@ -356,37 +404,19 @@ class DialogueGenerator:
 
     #   GENERTE RESPONSE
 
-    def generate_response_with_greedy_approach(self, chat_text, emotion_str, max_seq_length):
+    def generate_response_with_greedy_approach(self, chat_text_str, emotion_str):
         print("\n\n-> GENERATE RESPONSE")
 
-        # Preprocess input text
-        chat_text_sequence = self.tokenizer.texts_to_sequences([chat_text])
-        print("Chat text sequence = ", chat_text_sequence)
-        chat_text_sequence = tf.keras.preprocessing.sequence.pad_sequences(chat_text_sequence, maxlen=max_seq_length, padding='post')
-        print("Padded chat text sequence = ", chat_text_sequence)
-
-        # Convert emotion string to its corresponding enum value
-        emotion = EmotionStates[emotion_str.strip().replace(' ', '_').title()].value
-        print("Emotion = ", emotion)
-        
-        # Preprocess emotion data
-        emotion_sequence = np.zeros((1, self.EMOTION_SIZE))
-        emotion_sequence[0, emotion] = 1  # Set the corresponding emotion index to 1
-        print("Emotion sequence = ", emotion_sequence)
+        chat_text_input, emotion_input, target_seq, _ = self.preprocess_data([chat_text_str], [""], [emotion_str])
 
         # Initialize conversation history with encoder input and emotion
-        conversation_history = np.concatenate([chat_text_sequence, emotion_sequence], axis=1)
+        conversation_history = np.concatenate([chat_text_input], axis=1)
         print("Conversational history = ", conversation_history)
-        
-        # Initialize decoder input with a start token
-        target_seq = np.zeros((1, 1))
-        target_seq[0, 0] = self.tokenizer.word_index['<start>']
-        print("Target sequence = ", target_seq)
         
         stop_condition = False
         decoded_sentence = ''
         while not stop_condition:
-            output_tokens = self.model.predict([conversation_history, target_seq])
+            output_tokens = self.model([conversation_history, emotion_input, target_seq])
             print("\n\nOutput tokens[0] = ", output_tokens[0])
 
             # greedy decoding -  selecting the token with the highest probability
@@ -417,7 +447,7 @@ class DialogueGenerator:
                 decoded_sentence += ' ' + sampled_word
                 print("Decoded sentence = ", decoded_sentence)
 
-            if sampled_word == '<end>' or len(decoded_sentence.split()) > max_seq_length:
+            if sampled_word == '<end>' or len(decoded_sentence.split()) > self.MAX_SEQ_LENGTH:
                 stop_condition = True
                 print("\n!! Stopping condition achieved\n")
 
