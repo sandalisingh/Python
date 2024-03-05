@@ -6,15 +6,16 @@ import os
 import matplotlib.pyplot as plt
 import graphviz
 from enum import Enum
-from States import EmotionStates, get_emotion_index
-from tensorflow.keras.layers import RepeatVector, Reshape, Flatten, Input, InputLayer, Embedding, Concatenate, Add, Attention, MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector
-from tensorflow.keras.models import Model, Sequential
+from States import EmotionStates, get_emotion_index, logging
+from tensorflow.keras.layers import RepeatVector, Reshape, Flatten, Input, InputLayer, Embedding, Concatenate, Add, Attention
+from tensorflow.keras.layers import MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector
+from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras.preprocessing.text import Tokenizer
 from tensorflow.keras import backend
-# from tensorflow.keras.utils import plot_model
+from keras.callbacks import TensorBoard
+from tensorflow.keras.utils import plot_model
 # from keras_vis import heatmap
-# from tf_keras_vis import heatmap
 
 class DialogueGenerator:
 
@@ -24,53 +25,53 @@ class DialogueGenerator:
         self.EMBEDDING_DIM = 300  # Embedding dimension
         self.HIDDEN_DIM = 512     # Hidden dimension for LSTM layers
         self.EMOTION_SIZE = 1
+        self.MODEL_NAME = "dialogue_generator_model.h5"
+        self.TOKENIZER_NAME = "tokenizer.pkl"
+        self.MODEL = None
+        self.TOKENIZER = None
 
         try:
-            with open("tokenizer.pkl", 'rb') as tokenizer_file:
-                self.tokenizer = pickle.load(tokenizer_file)
-            print("Tokenizer loaded.")
+            with open(self.TOKENIZER_NAME, 'rb') as tokenizer_file:
+                self.TOKENIZER = pickle.load(tokenizer_file)
+            logging("info", "Tokenizer loaded.")
         except:
-            self.tokenizer = None
+            self.TOKENIZER = None
 
         try:
             # Load the model
-            model_path = 'dialogue_generator_model'  # Path to the directory where the model is saved
-            self.model = tf.saved_model.load(model_path)
-        except:
-            self.model = None
+            # model_path = 'dialogue_generator_model'  # Path to the directory where the model is saved
+            # self.model = tf.saved_model.load(model_path)
+            self.MODEL = load_model(self.MODEL_NAME)
+            print("Model loaded.")
+        except Exception as e:
+            logging("error", "Error loading model: "+str(e))
+            self.define_model()
            
-    def generate_positional_encoding(self):
-        position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
-        position_encoding = position_encoding * tf.cast(tf.ones((1, self.EMBEDDING_DIM)), dtype=tf.float32)
-        position_encoding = tf.expand_dims(position_encoding, 0)
-        return position_encoding
-
     #   TOKENIZER
 
     def create_tokenizer(self, chat_text, text_response):
-        if self.tokenizer is None:
+        if self.TOKENIZER is None:
             # Concatenate chat_text and text_response
             all_texts = chat_text + text_response
             print("Texts concatenated.\n")
             
             # Create tokenizer and fit on all texts
-            self.tokenizer = Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
-            self.tokenizer.fit_on_texts(all_texts)
-            self.tokenizer.word_index['<start>'] = self.tokenizer.num_words + 1
-            self.tokenizer.word_index['<end>'] = self.tokenizer.num_words + 2
+            self.TOKENIZER = Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
+            self.TOKENIZER.fit_on_texts(all_texts)
+            self.TOKENIZER.word_index['<start>'] = self.TOKENIZER.num_words + 1
+            self.TOKENIZER.word_index['<end>'] = self.TOKENIZER.num_words + 2
             
             # Manually add <start> and <end> to index_word
-            self.tokenizer.index_word[self.tokenizer.word_index['<start>']] = '<start>'
-            self.tokenizer.index_word[self.tokenizer.word_index['<end>']] = '<end>'
+            self.TOKENIZER.index_word[self.TOKENIZER.word_index['<start>']] = '<start>'
+            self.TOKENIZER.index_word[self.TOKENIZER.word_index['<end>']] = '<end>'
             
-            print("Tokenizer created and fitted on texts.")
+            logging("info", "Tokenizer created.")
             print("Tokenizer size = ", self.VOCAB_SIZE)
 
     def save_tokenizer(self):
-        tokenizer_path = "tokenizer.pkl"
-        with open(tokenizer_path, 'wb') as tokenizer_file:
-            pickle.dump(self.tokenizer, tokenizer_file)
-        print("\nTokenizer saved at ", tokenizer_path)
+        with open(self.TOKENIZER_NAME, 'wb') as tokenizer_file:
+            pickle.dump(self.TOKENIZER, tokenizer_file)
+        logging("info", "Tokenizer saved at "+self.TOKENIZER_NAME)
         return tokenizer_file
     
     #   DATA HANDLING
@@ -79,6 +80,7 @@ class DialogueGenerator:
         df = pd.read_csv('Conversation3.csv')
         self.display_top_rows(df)
         self.zeroth_row = df.iloc[0]
+        logging("info","Dataframe loaded.")
         return df
     
     def display_top_rows(self, df):
@@ -88,7 +90,7 @@ class DialogueGenerator:
         chat_text = df['chat_text'].tolist()
         text_response = df['text_response'].tolist()
         emotion = df['emotion'].tolist()
-        print("\nData extracted from DataFrame.")
+        logging("info","Data extracted from Dataframe.")
         return chat_text, text_response, emotion
 
     def preprocess_data(self, chat_text, text_response, emotion):
@@ -98,23 +100,23 @@ class DialogueGenerator:
         print("Text response[0] = ", text_response[0])
         print("Emotion[0] = ", emotion[0])
 
-        chat_text_sequences = self.tokenizer.texts_to_sequences(chat_text)
-        text_response_sequences = self.tokenizer.texts_to_sequences(text_response)
+        chat_text_sequences = self.TOKENIZER.texts_to_sequences(chat_text)
+        text_response_sequences = self.TOKENIZER.texts_to_sequences(text_response)
         print("\nConverted to indices...")
         print("Chat Text Sequence[0] = ", chat_text_sequences[0])
         print("Text Response Sequence[0] = ", text_response_sequences[0])
 
         # Add <end> token to each chat text sequence
         for seq in chat_text_sequences:
-            seq.append(self.tokenizer.word_index['<end>'])
+            seq.append(self.TOKENIZER.word_index['<end>'])
         
         # Add <start> token to each text response sequence
         for seq in text_response_sequences:
-            seq.insert(0, self.tokenizer.word_index['<start>'])
+            seq.insert(0, self.TOKENIZER.word_index['<start>'])
         
         # Add <end> token to each text response sequence
         for seq in text_response_sequences:
-            seq.append(self.tokenizer.word_index['<end>'])
+            seq.append(self.TOKENIZER.word_index['<end>'])
 
         print("\nAdded <end> token...")
         print("Chat Text Sequence[0] = ", chat_text_sequences[0])
@@ -141,14 +143,13 @@ class DialogueGenerator:
         emotion_inputs = np.array(emotion_inputs)
         emotion_inputs = np.expand_dims(emotion_inputs, axis=1)
         
-        print("Data preprocessed.\n\n")
+        logging("info","Data preprocessed.")
 
         encoder_inputs_chat_text = tf.convert_to_tensor(encoder_inputs_chat_text, dtype=tf.float32)
         emotion_inputs = tf.convert_to_tensor(emotion_inputs, dtype=tf.float32)
         decoder_inputs = tf.convert_to_tensor(decoder_inputs, dtype=tf.float32)
         decoder_outputs = tf.convert_to_tensor(decoder_outputs, dtype=tf.float32)
 
-        print("\nAfter Preprocess...")
         print("encoder_inputs_chat_text = ", encoder_inputs_chat_text)
         print("emotion_inputs = ", emotion_inputs)
         print("decoder_inputs = ", decoder_inputs)
@@ -165,7 +166,13 @@ class DialogueGenerator:
         self.create_tokenizer(chat_text, text_response)
         return chat_text, text_response, emotion
 
-    #   MODEL ARCHITECTURE DEFINITION
+    #   MODEL ARCHITECTURE 
+
+    def generate_positional_encoding(self):
+        position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
+        position_encoding = position_encoding * tf.cast(tf.ones((1, self.EMBEDDING_DIM)), dtype=tf.float32)
+        position_encoding = tf.expand_dims(position_encoding, 0)
+        return position_encoding
 
     def define_encoder(self):
         print("\n\n-> ENCODER")
@@ -198,7 +205,7 @@ class DialogueGenerator:
         lstm_output_seq, _, _ = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_chat_text')(normalised_output)
         print("LSTM Seq: ", lstm_output_seq)
 
-        print("\nEncoder defined.")
+        logging("info","Encoder defined.")
 
         return chat_text, lstm_output_seq
 
@@ -257,12 +264,12 @@ class DialogueGenerator:
         dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer', activation='softmax')(normalised_output)
         print("Dense Output: ", dense_output)
         
-        print("\nDecoder defined.\n")
+        logging("info","Decoder defined.")
         
         return emotion, prev_seq, dense_output
 
     def define_model(self):
-        if self.model is None:
+        if self.MODEL is None:
             chat_text, encoder_output_seq = self.define_encoder()
             emotion, prev_seq, output_seq = self.define_decoder(chat_text, encoder_output_seq) 
 
@@ -273,17 +280,33 @@ class DialogueGenerator:
             print("prev_seq shape = ", prev_seq.shape)
             print("output_seq shape = ", output_seq.shape)
 
-            self.model = Model([chat_text, emotion, prev_seq], output_seq)
+            self.MODEL = Model([chat_text, emotion, prev_seq], output_seq)
             
-            print("\nModel defined.")
-            print("Model Summary:")
-            self.model.summary()
+            logging("info","Model defined.")
+            self.get_model_summary()
 
             # Plot the model graph with colors and save it
             # plot_model(self.model, to_file='model_graph_plot.png', show_shapes=True, show_layer_names=True)
-            self.generate_model_arch_plot('model_graph_plot.png')
+            self.get_arch_flowchat()
+
+    def save_model(self):
+        if self.MODEL is not None:
+            try:
+                self.MODEL.save(os.path.join(os.getcwd(), self.MODEL_NAME))
+                logging("info", "Model saved.")
+            except Exception as e:
+                logging("error", "Error saving model: " + str(e))
+        else:
+            logging("error", "Model not loaded, cannot save.")
 
     #   VISUALIZATION
+
+    def get_model_summary(self):
+        print("Model Summary:")
+        self.MODEL.summary()
+
+    def get_arch_flowchat(self):
+        plot_model(self.MODEL, to_file='model_graph_plot.png', show_shapes=True)
 
     def generate_model_arch_plot(self, to_file):
         # Create a new graph
@@ -316,17 +339,17 @@ class DialogueGenerator:
         else:
             dot.view()
     
-    def visualize_tensor(self, layer_index, layer_name, tensor):
+    def visualize_tensor_value_range(self, layer_index, layer_name, tensor):
         try:  
             plt.figure(figsize=(10, 5))
-            plt.plot(tensor[0])
+            plt.plot(tensor)
             plt.title(f'Layer {layer_index} - {layer_name}')
             plt.xlabel('Index')
             plt.ylabel('Value')
             plt.grid(True)
             plt.show()
         except Exception as e:
-            print(f"Layer {layer_index} - {layer_name}: Error occurred during visualization - {str(e)}")
+            logging("error",f"Layer {layer_index} - {layer_name}: Error occurred during visualization - {str(e)}")
 
     #   OUTPUT INSPECTION
 
@@ -349,16 +372,14 @@ class DialogueGenerator:
 
         chat_text, emotion, prev_seq, _ = self.preprocess_data(chat_text, text_response, emotion)   
 
-        self.define_model()
-
         # Create a model to extract intermediate outputs
-        intermediate_model = Model(inputs=self.model.inputs, outputs=[layer.output for layer in self.model.layers])
+        intermediate_model = Model(inputs=self.MODEL.inputs, outputs=[layer.output for layer in self.MODEL.layers])
 
         # Get intermediate outputs
         intermediate_results = intermediate_model.predict([chat_text, emotion, prev_seq])
 
         # Print intermediate output tensors along with the layer name and index for the first row
-        for i, (layer, result) in enumerate(zip(self.model.layers, intermediate_results)):
+        for i, (layer, result) in enumerate(zip(self.MODEL.layers, intermediate_results)):
             layer_name = layer.name
             print(f"\nLayer {i} - '{layer_name}':")
             print(result[0])  # Printing only the first row of the tensor
@@ -369,17 +390,18 @@ class DialogueGenerator:
             #     print(f"Created heatmap for layer: {layer_name}")
 
             # Visualize the tensor
-            self.visualize_tensor(i, layer_name, result)
+            # self.visualize_tensor_value_range(i, layer_name, result[0])
 
     #   TRAINING
 
     def train_model(self, encoder_inputs, emotion_inputs, decoder_inputs, decoder_outputs, batch_size, epochs):
-        self.model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+        self.MODEL.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
         
-        self.model.fit([encoder_inputs, emotion_inputs, decoder_inputs], decoder_outputs, batch_size=batch_size, 
-            epochs=epochs, validation_split=0.2)
+        tensorboard = TensorBoard(log_dir='logs', histogram_freq=1)
+        self.MODEL.fit([encoder_inputs, emotion_inputs, decoder_inputs], decoder_outputs, batch_size=batch_size, 
+            epochs=epochs, validation_split=0.2, callbacks=[tensorboard])
         
-        print("\nModel trained.\n")
+        logging("info", "Model trained.")
  
     def create_train_and_save_model(self):
         chat_text, text_response, emotion = self.prepare_data()
@@ -387,143 +409,133 @@ class DialogueGenerator:
         # Preprocess data
         encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs = self.preprocess_data(chat_text, text_response, emotion)
 
-        # Define and compile the model
-        self.define_model()
-
         # Train the model
         self.train_model(encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs, batch_size=64, epochs=1)           
 
         # Save the tokenizer
         self.save_tokenizer()
 
-        # Save the trained model
-        model_dir = "dialogue_generator_model"
-        os.makedirs(model_dir, exist_ok=True)
-        tf.saved_model.save(self.model, model_dir)
-        print("Trained model saved.\n")
+        self.save_model()
 
     #   GENERTE RESPONSE
+
+    def sequence_to_text(self, prev_seq):
+        # Convert the sequence of token indices to text
+        response_tokens = [self.TOKENIZER.index_word.get(idx.numpy(), "<OOV>") for idx in tf.reshape(prev_seq, (-1,))]
+        
+        # Remove tokens after <end> token
+        end_index = response_tokens.index('<end>') if '<end>' in response_tokens else len(response_tokens)
+        response_text = ' '.join(response_tokens[:end_index])
+        return response_text
 
     def generate_response_with_greedy_approach(self, chat_text_str, emotion_str):
         print("\n\n-> GENERATE RESPONSE")
 
-        chat_text_input, emotion_input, target_seq, _ = self.preprocess_data([chat_text_str], [""], [emotion_str])
+        chat_text_input, emotion_input, _, prev_seq = self.preprocess_data([chat_text_str], [""], [emotion_str])
 
-        # Initialize conversation history with encoder input and emotion
-        conversation_history = np.concatenate([chat_text_input], axis=1)
-        print("Conversational history = ", conversation_history)
-        
-        stop_condition = False
-        decoded_sentence = ''
-        while not stop_condition:
-            output_tokens = output_tokens = self.model([conversation_history, emotion_input, target_seq], training=False, mask=None)
-            print("\n\nOutput tokens[0] = ", output_tokens[0])
-
-            # greedy decoding -  selecting the token with the highest probability
-            sampled_token_index = np.argmax(output_tokens[0, -1, :])
-            print("Sampled token index = ", sampled_token_index)
-
-            # Get the indices of the top three probabilities
-            top_three_indices = np.argsort(output_tokens[0, -1, :])[::-1][:3]
-
-            # Initialize a list to store the top three tokens
-            top_three_tokens = []
-
-            # Iterate over the top three indices and get the corresponding tokens
-            for index in top_three_indices:
-                token = self.tokenizer.index_word.get(index, None)
-                if token is not None:
-                    top_three_tokens.append((token, output_tokens[0, -1, index]))
-
-            # Print the top three tokens and their probabilities
-            print("\nTop three tokens with highest probabilities:")
-            for token, probability in top_three_tokens:
-                print(f"Token: {token}, Probability: {probability}")
-
-            sampled_word = self.tokenizer.index_word.get(sampled_token_index, None)
-            print("\nSampled word = ", sampled_word)
-
-            if sampled_word is not None and sampled_word != '<end>':
-                decoded_sentence += ' ' + sampled_word
-                print("Decoded sentence = ", decoded_sentence)
-
-            if sampled_word == '<end>' or len(decoded_sentence.split()) > self.MAX_SEQ_LENGTH:
-                stop_condition = True
-                print("\n!! Stopping condition achieved\n")
-
-            target_seq = np.zeros((1, 1))  # Resetting target_seq for next iteration
-            target_seq[0, 0] = sampled_token_index
-            print("Target sequence = ", target_seq)
+        for i in range(1, self.MAX_SEQ_LENGTH):
+            # Predict the next token
+            predictions = self.MODEL.predict([chat_text_input, emotion_input, prev_seq])
             
-            # Update conversation history with the latest decoder output
-            conversation_history = np.concatenate([conversation_history, target_seq], axis=1)
-            print("Conversation history = ", conversation_history)
-        
-        print("\nResponse generated.\n")
-        
-        return decoded_sentence.strip()
+            # Get the token index with the highest probability (greedy approach)
+            predicted_token_index = np.argmax(predictions[0, i - 1, :])
+            
+            # Update the previous sequence tensor
+            updated_value = tf.constant(predicted_token_index, dtype=tf.int32)
+            prev_seq = tf.tensor_scatter_nd_update(prev_seq, [[0, i]], [updated_value])
 
-    def generate_response_with_beam_search(self, chat_text, emotion_str, max_seq_length, beam_width=3, length_penalty_factor=0.6):
-        # Preprocess input text
-        chat_text_sequence = self.tokenizer.texts_to_sequences([chat_text])
-        chat_text_sequence = tf.keras.preprocessing.sequence.pad_sequences(chat_text_sequence, maxlen=max_seq_length, padding='post')
-        
-        # Convert emotion string to its corresponding enum value
-        emotion = EmotionStates[emotion_str.strip().replace(' ', '_').title()].value
-        
-        # Preprocess emotion data
-        emotion_sequence = np.zeros((1, self.EMOTION_SIZE))
-        emotion_sequence[0, emotion] = 1  # Set the corresponding emotion index to 1
-        
-        # Initialize conversation history with encoder input and emotion
-        conversation_history = np.concatenate([chat_text_sequence, emotion_sequence], axis=1)
-        
-        # Initialize decoder input with a start token
-        target_seq = np.zeros((1, 1))
-        target_seq[0, 0] = self.tokenizer.word_index['<start>']
-        
-        # Initialize list to store beam search candidates
-        candidates = [(target_seq, 0)]  # (candidate sequence, score)
-        
-        # Beam search loop
-        for _ in range(max_seq_length):
-            next_candidates = []
+            # If the predicted token is an end token, break the loop
+            if predicted_token_index == self.TOKENIZER.word_index['<end>']:
+                break
             
-            # Flag to indicate if any candidate sequence ends with <end>
-            end_found = False
-            
-            # Expand each candidate sequence
-            for seq, score in candidates:
-                if seq[0, -1] == self.tokenizer.word_index['<end>']:
-                    # If a candidate sequence ends with <end>, mark the flag and skip expansion
-                    end_found = True
-                    continue
-                
-                output_tokens = self.model.predict([conversation_history, seq])
-                sampled_token_probs = output_tokens[0, -1, :]
-                
-                # Get top beam_width tokens
-                top_indices = np.argsort(sampled_token_probs)[-beam_width:]
-                
-                # Expand each candidate with top beam_width tokens
-                for index in top_indices:
-                    next_seq = np.concatenate([seq, np.zeros((1, 1))], axis=1)
-                    next_seq[0, -1] = index
-                    
-                    # Calculate score with length normalization
-                    next_score = score - np.log(sampled_token_probs[index])  # Length normalization
-                    next_candidates.append((next_seq, next_score))
-            
-            if end_found:
-                break  # If any candidate sequence ends with <end>, terminate the search
-            
-            # Select top beam_width candidates
-            candidates = sorted(next_candidates, key=lambda x: x[1])[:beam_width]
+        response_text = self.sequence_to_text(prev_seq)
 
-        # Select the best candidate sequence
-        best_seq, _ = candidates[0]
+        logging("info", "Response generated")
         
-        # Convert token indices to words
-        decoded_sentence = ' '.join(self.tokenizer.index_word.get(idx, '<OOV>') for idx in best_seq[0])
-        
-        return decoded_sentence.strip()
+        return response_text 
+
+    def generate_response_with_beam_search(self, chat_text_str, emotion_str, beam_width=5):
+        # Preprocess data
+        chat_text_input, emotion_input, _, prev_seq = self.preprocess_data([chat_text_str], [""], [emotion_str])
+
+        # Initialize beam search
+        beam = [(prev_seq, 0)]
+        print("Beam = ", beam)
+
+        # Initialize the final generated sequences
+        final_sequences = []
+
+        # Main loop for generating sequences
+        for _ in range(self.MAX_SEQ_LENGTH):
+            candidates = []
+            for prev_seq, score in beam:
+                # Predict the next token probabilities
+                predictions = self.MODEL.predict([chat_text_input, emotion_input, prev_seq])
+
+                # Get the top tokens with their probabilities
+                top_tokens = np.argsort(predictions[0, -1])[-beam_width:]
+                print("Top tokens = ", top_tokens)
+
+                for token in top_tokens:
+                    print("Token = ", token)
+
+                    # Create a candidate sequence
+                    candidate_seq = np.copy(prev_seq)
+
+                    # Find the position where the next token should be inserted
+                    next_token_position = np.where(candidate_seq == 0)[1][0]
+
+                    # Insert the token at the correct position
+                    candidate_seq[0, next_token_position] = token
+
+                    # Calculate the score for the candidate sequence
+                    candidate_score = score - np.log(predictions[0, -1, token])
+
+                    if token is self.TOKENIZER.word_index['<end>']:
+                        final_sequences.extend((candidate_seq, candidate_score))
+                    else:
+                        # Append the candidate to the list
+                        candidates.append((candidate_seq, candidate_score))
+
+            # Sort the candidates by score
+            candidates.sort(key=lambda x: x[1])
+            print("Candidates = ", candidates)
+
+            # Select top candidates to continue beam search
+            beam = candidates[:beam_width]
+            print("Beam = ", beam)
+
+            # Check for completion of sequences
+            completed_sequences = [(seq, score) for seq, score in beam if seq[0, -1] == 9999]  # 2 is the end token
+            if completed_sequences:
+                print("Completed sequences = ", completed_sequences)
+                final_sequences.extend(completed_sequences)
+
+            # Filter out completed sequences from beam
+            beam = [(seq, score) for seq, score in beam if seq[0, -1] != 9999]
+            print("Beam = ", beam)
+            print("Final sequences = ", final_sequences)
+
+            # If no more candidates, break the loop
+            if not beam:
+                break
+
+        # Choose the best final sequence
+        if final_sequences:
+            final_sequences.sort(key=lambda x: x[1])
+            best_seq = final_sequences[0][0]
+
+            # Extract and print all final sequences
+            all_sequences = [self.sequence_to_text(seq[0]) for seq in final_sequences]
+            print("All Final Sequences:")
+            for seq in all_sequences:
+                print(seq)
+        else:
+            # Choose the best sequence from the last beam
+            beam.sort(key=lambda x: x[1])
+            best_seq = beam[0][0]
+
+        # Decode the best sequence into text
+        response_text = self.sequence_to_text(best_seq)
+
+        return response_text

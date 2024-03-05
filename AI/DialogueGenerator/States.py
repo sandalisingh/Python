@@ -1,4 +1,11 @@
 from enum import Enum
+from termcolor import colored  
+
+def logging(level, message):
+    if level == 'info':
+        print(colored("\nINFO : "+message+"\n", "yellow"))  # Logging info in yellow
+    elif level == 'error':
+        print(colored("\nERROR : "+message+"\n", "red"))     # Logging error in red
 
 class ActionStates(Enum):
     Patrolling = 0
@@ -60,21 +67,18 @@ def get_personality(index):
             return p.name
     return None
 
-# Function to get action from index
 def get_action(index):
     for action in ActionStates:
         if action.value == index:
             return action.name
     return None
 
-# Function to get emotion from index
 def get_emotion(index):
     for emotion in EmotionStates:
         if emotion.value == index:
             return emotion.name
     return None
 
-# Function to get emotion index
 def get_emotion_index(emotion):
     try:
         return EmotionStates[emotion.strip().capitalize()].value
