@@ -70,8 +70,6 @@ class DialogueGenerator:
         self.MODEL = None
         self.TOKENIZER = None
 
-        self.PositionalEncoding = PositionalEncoding(self.MAX_SEQ_LENGTH, self.EMBEDDING_DIM)
-
         self.init_tokenizer()
         self.init_model()
 
@@ -215,7 +213,10 @@ class DialogueGenerator:
     def define_encoder(self):
         chat_text = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_chat_text')
         embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_chat_text')(chat_text)
-        positional_output = self.PositionalEncoding(embedding_output, name='positional_encoding_of_chat_text')
+        
+        positional_layer = PositionalEncoding(self.MAX_SEQ_LENGTH, self.EMBEDDING_DIM, name='positional_encoding_of_chat_text')
+        positional_output = positional_layer(embedding_output)
+        
         attention_output = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='multi_head_attention_to_chat_text')(positional_output, key=positional_output, value=positional_output)
         residual_output = Add(name='add_residual_connection_of_chat_text')([positional_output, attention_output])
         normalised_output = LayerNormalization(name='normalization_of_chat_text')(residual_output)
@@ -226,7 +227,10 @@ class DialogueGenerator:
         emotion = Input(shape=(1,), name='decoder_input1_emotion')
         prev_seq = Input(shape=(self.MAX_SEQ_LENGTH,), name='decoder_input2_prev_seq')
         embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_prev_seq')(prev_seq)
-        positional_output = self.PositionalEncoding(embedding_output, name='positional_encoding_of_prev_seq')
+        
+        positional_layer = PositionalEncoding(self.MAX_SEQ_LENGTH, self.EMBEDDING_DIM, name='positional_encoding_of_prev_seq')
+        positional_output = positional_layer(embedding_output)
+        
         projection_output = Dense(self.HIDDEN_DIM, name='projection_of_prev_seq')(positional_output)
         attention_output = Attention(name='attention_to_prev_and_encoder_outputs')([projection_output, encoder_output_seq])
         residual_prev_seq_output = Add(name='add_residual_connection_of_prev_seq')([projection_output, attention_output])
@@ -400,7 +404,6 @@ class DialogueGenerator:
 
         # Initialize beam search
         beam = [(prev_seq, 0)]
-        print("Beam = ", beam)
 
         # Initialize the final generated sequences
         final_sequences = []
@@ -408,16 +411,21 @@ class DialogueGenerator:
         # Main loop for generating sequences
         for _ in range(self.MAX_SEQ_LENGTH):
             candidates = []
+            completed_sequences = []  # Initialize completed_sequences list
             for prev_seq, score in beam:
                 # Predict the next token probabilities
                 predictions = self.MODEL.predict([chat_text_input, emotion_input, prev_seq])
 
                 # Get the top tokens with their probabilities
-                top_tokens = np.argsort(predictions[0, -1])[-beam_width:]
-                print("Top tokens = ", top_tokens)
+                # top_tokens = np.argsort(predictions[0, -1])[-beam_width:]
+                top_tokens = np.argsort(predictions[0, -1])[-beam_width:][::-1]
+
+                print("Top tokens:")
+                print(top_tokens)
 
                 for token in top_tokens:
-                    print("Token = ", token)
+                    print("Token:")
+                    print(token)
 
                     # Create a candidate sequence
                     candidate_seq = np.copy(prev_seq)
@@ -431,51 +439,51 @@ class DialogueGenerator:
                     # Calculate the score for the candidate sequence
                     candidate_score = score - np.log(predictions[0, -1, token])
 
-                    if token is self.TOKENIZER.word_index['<end>']:
-                        final_sequences.extend((candidate_seq, candidate_score))
+                    print("Candidate seq:")
+                    print(candidate_seq)
+                    print("Candidate score:")
+                    print(candidate_score)
+
+                    # Check if the sequence is complete
+                    if token == self.TOKENIZER.word_index['<end>']:
+                        completed_sequences.append((candidate_seq, candidate_score))
                     else:
-                        # Append the candidate to the list
                         candidates.append((candidate_seq, candidate_score))
 
             # Sort the candidates by score
             candidates.sort(key=lambda x: x[1])
-            print("Candidates = ", candidates)
 
             # Select top candidates to continue beam search
             beam = candidates[:beam_width]
-            print("Beam = ", beam)
 
             # Check for completion of sequences
-            completed_sequences = [(seq, score) for seq, score in beam if seq[0, -1] == 9999]  # 2 is the end token
-            if completed_sequences:
-                print("Completed sequences = ", completed_sequences)
-                final_sequences.extend(completed_sequences)
+            final_sequences.extend(completed_sequences)
 
-            # Filter out completed sequences from beam
-            beam = [(seq, score) for seq, score in beam if seq[0, -1] != 9999]
-            print("Beam = ", beam)
-            print("Final sequences = ", final_sequences)
+            print("Beam search candidates:")
+            print(beam)
+            print("Completed sequences:")
+            print(completed_sequences)
+            print("Final sequences:")
+            print(final_sequences)
 
-            # If no more candidates, break the loop
-            if not beam:
-                break
+            if final_sequences:
+                final_sequences.sort(key=lambda x: x[1])
+                best_seq = final_sequences[0][0]
 
-        # Choose the best final sequence
-        if final_sequences:
-            final_sequences.sort(key=lambda x: x[1])
-            best_seq = final_sequences[0][0]
+                # Extract and print all final sequences
+                all_sequences = [self.sequence_to_text(seq[0]) for seq in final_sequences]
+                print("All Final Sequences:")
+                for seq in all_sequences:
+                    print(seq)
+            else:
+                # Choose the best sequence from the last beam
+                beam.sort(key=lambda x: x[1])
+                best_seq = beam[0][0]
 
-            # Extract and print all final sequences
-            all_sequences = [self.sequence_to_text(seq[0]) for seq in final_sequences]
-            print("All Final Sequences:")
-            for seq in all_sequences:
-                print(seq)
-        else:
-            # Choose the best sequence from the last beam
-            beam.sort(key=lambda x: x[1])
-            best_seq = beam[0][0]
+            # Decode the best sequence into text
+            response_text = self.sequence_to_text(best_seq)
 
-        # Decode the best sequence into text
-        response_text = self.sequence_to_text(best_seq)
+            print("Best sequence:")
+            print(response_text)
 
         return response_text
