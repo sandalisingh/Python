@@ -255,38 +255,7 @@ class DialogueGenerator:
 
     def get_arch_flowchat(self):
         plot_model(self.MODEL, to_file='model_graph_plot.png', show_shapes=True)
-
-    def generate_model_arch_plot(self, to_file):
-        # Create a new graph
-        dot = graphviz.Digraph()
-
-        # Add nodes
-        dot.node('InputLayer', color='lightblue')
-        dot.node('Embedding', color='royalblue')
-        dot.node('Add', color='lightcoral')
-        dot.node('MultiHeadAttention', color='gold')
-        dot.node('LayerNormalization', color='lightgreen')
-        dot.node('LSTM', color='coral')
-        dot.node('Dense', color='lightgreen')
-        dot.node('RepeatVector', color='mediumpurple')
-        dot.node('Attention', color='gold')
-
-        # Add edges
-        dot.edge('InputLayer', 'Embedding')
-        dot.edge('Embedding', 'Add')
-        dot.edge('Add', 'MultiHeadAttention')
-        dot.edge('MultiHeadAttention', 'LayerNormalization')
-        dot.edge('LayerNormalization', 'LSTM')
-        dot.edge('LSTM', 'Dense')
-        dot.edge('Dense', 'RepeatVector')
-        dot.edge('RepeatVector', 'Attention')
-
-        # Save the graph to a file or view directly
-        if to_file:
-            dot.render(to_file, format='png')
-        else:
-            dot.view()
-    
+  
     def visualize_tensor_value_range(self, layer_index, layer_name, tensor):
         try:  
             plt.figure(figsize=(10, 5))
