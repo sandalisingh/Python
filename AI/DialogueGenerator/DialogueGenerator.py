@@ -19,6 +19,8 @@ from tensorflow.keras.utils import plot_model
 
 class DialogueGenerator:
 
+    #   INITIALIZATION
+
     def __init__(self):
         self.MAX_SEQ_LENGTH = 50  # Maximum sequence length for input and output
         self.VOCAB_SIZE = 10000   # Vocabulary size
@@ -30,23 +32,25 @@ class DialogueGenerator:
         self.MODEL = None
         self.TOKENIZER = None
 
+        self.init_tokenizer()
+        self.init_model()
+
+    def init_tokenizer(self):
         try:
             with open(self.TOKENIZER_NAME, 'rb') as tokenizer_file:
                 self.TOKENIZER = pickle.load(tokenizer_file)
             logging("info", "Tokenizer loaded.")
         except:
             self.TOKENIZER = None
-
+   
+    def init_model(self):
         try:
-            # Load the model
-            # model_path = 'dialogue_generator_model'  # Path to the directory where the model is saved
-            # self.model = tf.saved_model.load(model_path)
             self.MODEL = load_model(self.MODEL_NAME)
-            print("Model loaded.")
+            logging("info", "Model loaded.")
         except Exception as e:
             logging("error", "Error loading model: "+str(e))
             self.define_model()
-           
+       
     #   TOKENIZER
 
     def create_tokenizer(self, chat_text, text_response):
@@ -169,117 +173,57 @@ class DialogueGenerator:
     #   MODEL ARCHITECTURE 
 
     def generate_positional_encoding(self):
-        position_encoding = tf.expand_dims(tf.cast(tf.range(self.MAX_SEQ_LENGTH), dtype=tf.float32), axis=-1) / tf.cast((self.EMBEDDING_DIM - 1), dtype=tf.float32)
-        position_encoding = position_encoding * tf.cast(tf.ones((1, self.EMBEDDING_DIM)), dtype=tf.float32)
-        position_encoding = tf.expand_dims(position_encoding, 0)
-        return position_encoding
+        angle_rads = self.get_angles(np.arange(self.MAX_SEQ_LENGTH)[:, np.newaxis],
+                                     np.arange(self.EMBEDDING_DIM)[np.newaxis, :])
+        
+        # Apply sin to even indices in the array
+        angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
+        
+        # Apply cos to odd indices in the array
+        angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
+        
+        pos_encoding = angle_rads[np.newaxis, ...]
+
+        pos_encoding = tf.cast(pos_encoding, dtype=tf.float32)
+        
+        return pos_encoding
+    
+    def get_angles(self, position, i):
+        angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(self.EMBEDDING_DIM))
+        return position * angle_rates
 
     def define_encoder(self):
-        print("\n\n-> ENCODER")
-
-        print("\n- LAYER 0 - INPUT")
         chat_text = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_chat_text')
-        print("Encoder Chat Text Input: ", chat_text)
-        
-        print("\n- LAYER 1 - EMBEDDING")
         embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_chat_text')(chat_text)
-        print("Encoder Embedding Output: ", embedding_output)
-
-        print("\n- LAYER 2 - (ORDER) - POSITIONAL EMBEDDING")
-        positional_output = Add(name='positional_embedding_of_chat_text')([embedding_output, self.generate_positional_encoding()])
-        print("Positional Embeddings Output: ", positional_output)
-
-        print("\n- LAYER 3 - (CONTEXT) - MULTI HEAD ATTENTION")
+        pos_encoding = self.generate_positional_encoding()
+        positional_output = Add(name='positional_embedding_of_chat_text')([embedding_output, pos_encoding])
         attention_output = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='multi_head_attention_to_chat_text')(positional_output, key=positional_output, value=positional_output)
-        print("Attention Output: ", attention_output)
-
-        print("\n- LAYER 4 - ADDING RESIDUAL CONNECTION")
         residual_output = Add(name='add_residual_connection_of_chat_text')([positional_output, attention_output])
-        print("Residual Addition: ", residual_output)
-
-        print("\n- LAYER 5 - NORMALIZATION")
         normalised_output = LayerNormalization(name='normalization_of_chat_text')(residual_output)
-        print("Normalization: ", normalised_output)
-
-        print("\n- LAYER 6 - (HISTORY) - LSTM")
         lstm_output_seq, _, _ = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_chat_text')(normalised_output)
-        print("LSTM Seq: ", lstm_output_seq)
-
-        logging("info","Encoder defined.")
-
         return chat_text, lstm_output_seq
 
     def define_decoder(self, chat_text, encoder_output_seq):
-        print("\n\n-> DECODER")
-
-        print("\n- LAYER 0 - EMOTION INPUT")
         emotion = Input(shape=(1,), name='decoder_input1_emotion')
-        print("Decoder Emotion Input: ", emotion)
-        
-        print("\n- LAYER 1 - DECODER PREV SEQ INPUT")
         prev_seq = Input(shape=(self.MAX_SEQ_LENGTH,), name='decoder_input2_prev_seq')
-        print("Decoder Prev Seq Input: ", prev_seq)
-
-        print("\n- LAYER 2 - EMBEDDING OF PREV SEQ")
         embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_prev_seq')(prev_seq)
-        print("Decoder Embedding Output: ", embedding_output)
-
-        print("\n- LAYER 3 - (ORDER) - POSITIONAL EMBEDDING")
-        positional_output = Add(name='positional_embedding_of_decoder_2')([embedding_output, self.generate_positional_encoding()])
-        print("Positional Embeddings of Decoder Output: ", positional_output)
-
-        print("\n- LAYER 4 - PROJECTION OF PREV SEQ")
-        projection_output = Dense(self.HIDDEN_DIM, name='projection_of_prev_seq')(positional_output)
-        print("Projection: ", projection_output)
-       
-        print("\n- LAYER 5 - ATTENTION")
+        # pos_encoding = self.generate_positional_encoding()
+        # positional_output = Add(name='positional_embedding_of_decoder_2')([embedding_output, pos_encoding])
+        projection_output = Dense(self.HIDDEN_DIM, name='projection_of_prev_seq')(embedding_output)
         attention_output = Attention(name='attention_to_prev_and_encoder_outputs')([projection_output, encoder_output_seq])
-        print("Attention Output: ", attention_output)
-
-        print("\n- LAYER 6 - ADDING RESIDUAL CONNECTION")
         residual_prev_seq_output = Add(name='add_residual_connection_of_prev_seq')([projection_output, attention_output])
-        print("Residual Addition: ", residual_prev_seq_output)
-
-        print("\n- LAYER 7 - REPEAT EMOTION")
         repeated_emotion = RepeatVector(self.MAX_SEQ_LENGTH, name='repeat_emotion')(emotion)
-        print("Repeated emotion: ", repeated_emotion)
-
-        print("\n- LAYER 8 - RESHAPE EMOTION")
         reshaped_emotion = repeated_emotion * tf.cast(tf.ones((1, self.HIDDEN_DIM)), dtype=tf.float32)
-        print("Reshaped emotion: ", reshaped_emotion)
-
-        print("\n- LAYER 9 - ATTENTION")
         emotion_attention_output = Attention(name='attention_to_emotion')([residual_prev_seq_output, reshaped_emotion])
-        print("Attention Output: ", attention_output)
-
-        print("\n- LAYER 10 - ADDING RESIDUAL CONNECTION")
         residual_emotion_output = Add(name='add_residual_connection_of_emotion')([emotion_attention_output, reshaped_emotion])
-        print("Residual Addition: ", residual_emotion_output)
-
-        print("\n- LAYER 11 - NORMALIZATION")
         normalised_output = LayerNormalization(name='normalization_of_seq')(residual_emotion_output)
-        print("Normalization: ", normalised_output)
-        
-        print("\n- LAYER 12 - DENSE")
         dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer', activation='softmax')(normalised_output)
-        print("Dense Output: ", dense_output)
-        
-        logging("info","Decoder defined.")
-        
         return emotion, prev_seq, dense_output
 
     def define_model(self):
         if self.MODEL is None:
             chat_text, encoder_output_seq = self.define_encoder()
             emotion, prev_seq, output_seq = self.define_decoder(chat_text, encoder_output_seq) 
-
-            print("Defining model...")
-            print("chat_text shape = ", chat_text.shape)
-            print("encoder_output_seq shape = ", encoder_output_seq.shape)
-            print("emotion shape = ", emotion.shape)
-            print("prev_seq shape = ", prev_seq.shape)
-            print("output_seq shape = ", output_seq.shape)
-
             self.MODEL = Model([chat_text, emotion, prev_seq], output_seq)
             
             logging("info","Model defined.")
@@ -351,6 +295,16 @@ class DialogueGenerator:
         except Exception as e:
             logging("error",f"Layer {layer_index} - {layer_name}: Error occurred during visualization - {str(e)}")
 
+    def visualize_attention_heatmap(self, attention_weights, layer_name, layer_index):
+        attention_weights = attention_weights.squeeze()  # Remove unnecessary dimensions
+        plt.figure(figsize=(10, 5))
+        plt.title(f'Attention Heatmap - Layer {layer_index}: {layer_name}')
+        plt.imshow(attention_weights, cmap='viridis')
+        plt.xlabel('Input Sequence')
+        plt.ylabel('Output Sequence')
+        plt.colorbar()
+        plt.show()
+
     #   OUTPUT INSPECTION
 
     def inspect_layer_outputs(self):
@@ -384,10 +338,9 @@ class DialogueGenerator:
             print(f"\nLayer {i} - '{layer_name}':")
             print(result[0])  # Printing only the first row of the tensor
 
-            # if isinstance(layer, Attention):
-            #     # Create and save the heatmap
-            #     heatmap(model, layer_name=layer_name, to_file=f"{layer_name}_heatmap.png", input_tensor=layer.input_tensor, write_grads=False)
-            #     print(f"Created heatmap for layer: {layer_name}")
+            if isinstance(layer, Attention) and layer.get_weights():
+                attention_weights = layer.get_weights()[0]  # Extract attention weights
+                self.visualize_attention_heatmap(attention_weights, layer_name, i)
 
             # Visualize the tensor
             # self.visualize_tensor_value_range(i, layer_name, result[0])
