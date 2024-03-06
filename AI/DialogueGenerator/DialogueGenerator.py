@@ -401,6 +401,12 @@ class DialogueGenerator:
     def generate_response_with_beam_search(self, chat_text_str, emotion_str, beam_width=5):
         # Preprocess data
         chat_text_input, emotion_input, _, prev_seq = self.preprocess_data([chat_text_str], [""], [emotion_str])
+        
+        # Update the first element from 9999 to 9998
+        prev_seq = tf.tensor_scatter_nd_update(prev_seq, indices=[[0, 0]], updates=[self.TOKENIZER.word_index['<start>']])
+        
+        print("prev_seq : ") 
+        print(prev_seq) 
 
         # Initialize beam search
         beam = [(prev_seq, 0)]
