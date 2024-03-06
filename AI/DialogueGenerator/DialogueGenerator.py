@@ -176,6 +176,8 @@ class DialogueGenerator:
         angle_rads = self.get_angles(np.arange(self.MAX_SEQ_LENGTH)[:, np.newaxis],
                                      np.arange(self.EMBEDDING_DIM)[np.newaxis, :])
         
+        print("Angle rads type:", type(angle_rads), "Shape:", angle_rads.shape)
+        
         # Apply sin to even indices in the array
         angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
         
@@ -196,7 +198,9 @@ class DialogueGenerator:
         chat_text = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_chat_text')
         embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_chat_text')(chat_text)
         pos_encoding = self.generate_positional_encoding()
+        print("Pos encoding type:", type(pos_encoding))
         positional_output = Add(name='positional_embedding_of_chat_text')([embedding_output, pos_encoding])
+        print("Positional output type before:", type(positional_output))
         attention_output = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='multi_head_attention_to_chat_text')(positional_output, key=positional_output, value=positional_output)
         residual_output = Add(name='add_residual_connection_of_chat_text')([positional_output, attention_output])
         normalised_output = LayerNormalization(name='normalization_of_chat_text')(residual_output)

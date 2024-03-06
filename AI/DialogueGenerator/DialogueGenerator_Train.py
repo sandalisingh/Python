@@ -13,5 +13,5 @@ dialogue_generator = DialogueGenerator()
 # dialogue_generator.get_arch_flowchat()
 
 # Inspection
-dialogue_generator.inspect_layer_outputs()
+# dialogue_generator.inspect_layer_outputs()
 
