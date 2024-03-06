@@ -17,6 +17,44 @@ from keras.callbacks import TensorBoard
 from tensorflow.keras.utils import plot_model
 # from keras_vis import heatmap
 
+
+#   POSITIONAL LAYER
+
+class PositionalEncoding(tf.keras.layers.Layer):
+    def __init__(self, max_seq_len, embedding_dim, name='positional_encoding', **kwargs):
+        super(PositionalEncoding, self).__init__(name=name, **kwargs)
+        self.MAX_SEQ_LENGTH = max_seq_len
+        self.EMBEDDING_DIM = embedding_dim
+        self.position_encoding = self.calculate_positional_encoding()
+
+    def calculate_positional_encoding(self):
+        position_encoding = np.zeros((self.MAX_SEQ_LENGTH, self.EMBEDDING_DIM), dtype=np.float32)
+        for pos in range(self.MAX_SEQ_LENGTH):
+            for i in range(self.EMBEDDING_DIM):
+                position_encoding[pos, i] = np.sin(pos / np.power(10000, (2 * i) / self.EMBEDDING_DIM))
+                position_encoding[pos, i] = np.cos(pos / np.power(10000, (2 * i + 1) / self.EMBEDDING_DIM))
+        
+        print("Positional Encoding:")
+        print(position_encoding)
+        return tf.convert_to_tensor(position_encoding)
+
+    def call(self, inputs):
+        batch_size = tf.shape(inputs)[0]
+        tiled_position_encoding = tf.tile(tf.expand_dims(self.position_encoding, 0), [batch_size, 1, 1])
+        
+        print("Tiled Positional Encoding:")
+        print(tiled_position_encoding)
+        
+        result = inputs + tiled_position_encoding
+        
+        print("Result after adding Positional Encoding:")
+        print(result)
+        
+        return result
+
+# Register the custom layer
+tf.keras.utils.get_custom_objects()['PositionalEncoding'] = PositionalEncoding
+
 class DialogueGenerator:
 
     #   INITIALIZATION
@@ -31,6 +69,8 @@ class DialogueGenerator:
         self.TOKENIZER_NAME = "tokenizer.pkl"
         self.MODEL = None
         self.TOKENIZER = None
+
+        self.PositionalEncoding = PositionalEncoding(self.MAX_SEQ_LENGTH, self.EMBEDDING_DIM)
 
         self.init_tokenizer()
         self.init_model()
@@ -169,38 +209,13 @@ class DialogueGenerator:
         
         self.create_tokenizer(chat_text, text_response)
         return chat_text, text_response, emotion
-
+        
     #   MODEL ARCHITECTURE 
-
-    def generate_positional_encoding(self):
-        angle_rads = self.get_angles(np.arange(self.MAX_SEQ_LENGTH)[:, np.newaxis],
-                                     np.arange(self.EMBEDDING_DIM)[np.newaxis, :])
-        
-        print("Angle rads type:", type(angle_rads), "Shape:", angle_rads.shape)
-        
-        # Apply sin to even indices in the array
-        angle_rads[:, 0::2] = np.sin(angle_rads[:, 0::2])
-        
-        # Apply cos to odd indices in the array
-        angle_rads[:, 1::2] = np.cos(angle_rads[:, 1::2])
-        
-        pos_encoding = angle_rads[np.newaxis, ...]
-
-        pos_encoding = tf.cast(pos_encoding, dtype=tf.float32)
-        
-        return pos_encoding
-    
-    def get_angles(self, position, i):
-        angle_rates = 1 / np.power(10000, (2 * (i // 2)) / np.float32(self.EMBEDDING_DIM))
-        return position * angle_rates
 
     def define_encoder(self):
         chat_text = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_chat_text')
         embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_chat_text')(chat_text)
-        pos_encoding = self.generate_positional_encoding()
-        print("Pos encoding type:", type(pos_encoding))
-        positional_output = Add(name='positional_embedding_of_chat_text')([embedding_output, pos_encoding])
-        print("Positional output type before:", type(positional_output))
+        positional_output = self.PositionalEncoding(embedding_output, name='positional_encoding_of_chat_text')
         attention_output = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='multi_head_attention_to_chat_text')(positional_output, key=positional_output, value=positional_output)
         residual_output = Add(name='add_residual_connection_of_chat_text')([positional_output, attention_output])
         normalised_output = LayerNormalization(name='normalization_of_chat_text')(residual_output)
@@ -211,9 +226,8 @@ class DialogueGenerator:
         emotion = Input(shape=(1,), name='decoder_input1_emotion')
         prev_seq = Input(shape=(self.MAX_SEQ_LENGTH,), name='decoder_input2_prev_seq')
         embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_prev_seq')(prev_seq)
-        # pos_encoding = self.generate_positional_encoding()
-        # positional_output = Add(name='positional_embedding_of_decoder_2')([embedding_output, pos_encoding])
-        projection_output = Dense(self.HIDDEN_DIM, name='projection_of_prev_seq')(embedding_output)
+        positional_output = self.PositionalEncoding(embedding_output, name='positional_encoding_of_prev_seq')
+        projection_output = Dense(self.HIDDEN_DIM, name='projection_of_prev_seq')(positional_output)
         attention_output = Attention(name='attention_to_prev_and_encoder_outputs')([projection_output, encoder_output_seq])
         residual_prev_seq_output = Add(name='add_residual_connection_of_prev_seq')([projection_output, attention_output])
         repeated_emotion = RepeatVector(self.MAX_SEQ_LENGTH, name='repeat_emotion')(emotion)
