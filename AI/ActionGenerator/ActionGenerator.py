@@ -1,29 +1,31 @@
 import numpy as np
-from States import ActionStates, Range, PersonalityIndex, index_to_range_value, index_to_range_key, get_action, get_personality
+from States import logging, ActionStates, Range, PersonalityIndex, EmotionStates
+from prettytable import PrettyTable
+import math
 
 class ActionGenerator:
 
-    def __init__(self, load_from_file=True):
+    def __init__(self):
         # Initialize Q-table
         self.no_of_personality_states = 5    # OCEAN personality model
         self.no_of_ranges_of_personality_states = 3  # 3 ranges for each personality states (0-3, 4-7, 8-10)
         self.no_of_emotional_states = 28  # 10 emotional states
         self.no_of_action_states = 10  # 10 action states
 
-        if load_from_file:
-            try:
-                self.Q = np.load('Action_Q_Table.npy')
-                print("\nQ-table loaded successfully.\n")
-            except FileNotFoundError:
-                print("\nQ-table not found. Initializing new Q-table.")
-                self.Q = self.initialize_q_table()
-        else:
+        try:
+            self.Q = np.load('Action_Q_Table.npy')
+            logging("info", "Q-table loaded successfully.")
+        except Exception as e:
+            logging("error", str(e))
             self.Q = self.initialize_q_table()
+            logging("info", "Initialized new Q-table.")
 
         # Parameters
         self.alpha = 0.1  # Learning rate
         self.gamma = 0.9  # Discount factor
-        self.epsilon = 0.1  # Exploration rate
+        self.epsilon = 0.3  # Exploration rate
+
+    #   Q TABLE
 
     def initialize_q_table(self):
         # initialize Q table
@@ -32,10 +34,67 @@ class ActionGenerator:
                                  self.no_of_emotional_states, self.no_of_action_states, self.no_of_action_states))
 
     def save_q_table(self):
-        np.save('Action_Q_Table.npy', self.Q)
-        print("Q-table saved successfully.\n")
-    
+        try:
+            np.save('Action_Q_Table.npy', self.Q)
+            logging("info", "Q-table saved successfully.")
+        except Exception as e:
+            logging("error", str(e))
+        
+    def print_q_table(self, q_table, emotion_index, prev_action_index, personality=None, title="Q table"):
+        action_names = [ActionStates.get_action(i) for i in range(self.no_of_action_states)]
+        headers = ["Prev Action"] + list(action_names)
+
+        table = PrettyTable(headers)
+        table.maxwidth = 80
+
+        prev_action_name = ActionStates.get_action(prev_action_index)
+        
+        # Round Q-values and create row
+        rounded_q_values = [round(val, 2) for val in q_table]  # Round to 2 decimal places
+        row = [prev_action_name] + rounded_q_values
+        table.add_row(row)
+
+        # Print the formatted Q-table
+        table.title = title + f" ({PersonalityIndex.get_personality(personality)}) ({EmotionStates.get_emotion(emotion_index)})"
+        print(table)  
+
+    #   ACTION GENERATION
+
+    def action_generator(self, personality_vector, emotional_state_index, previous_action_state_index) :
+        # Choose action based on epsilon-greedy policy
+        if np.random.rand() < self.epsilon: 
+            logging("info", "Exploration")
+            final_action_state_index = np.random.randint(self.no_of_action_states)  # Choose random action
+            print("\nRandom final action state index = ", final_action_state_index)
+        else:
+            logging("info", "Exploitation")
+
+            # Initialize an array for 10 action states with value 1
+            q_val_array = [1] * self.no_of_action_states
+
+            # Calculate combined Q-values for each action state
+            for i in range(self.no_of_personality_states):  # Iterate over 5 ocean personalities
+                personality_index = Range.index_to_range_value(personality_vector[i])
+                extracted_q_table = self.Q[i][personality_index][emotional_state_index.value][previous_action_state_index.value]
+                self.print_q_table(extracted_q_table.tolist(), emotional_state_index.value, previous_action_state_index.value, i)
+                for j in range(self.no_of_action_states):  # Iterate over 10 action states
+                    q_val_array[j] *= extracted_q_table[j]
+
+            # Print the q_val_array using the print_q_table function
+            self.print_q_table(q_val_array, emotional_state_index.value, previous_action_state_index.value, None, "Multiplied Q table")  # Reshape for a single row
+
+            # Select action state
+            final_action_state_index = np.argmax(q_val_array)
+            print("\nFinal action state index = ", final_action_state_index)
+
+        print("\n")
+        return final_action_state_index
+
+    #   REINFORCEMENT LEARNING
+
     def calculate_reward(self, personality_vector, current_action, next_action):
+        transition_reward = 0
+        preference_reward = 0
         reward = 0
         
         # Define all possible transitions and their associated rewards
@@ -55,15 +114,16 @@ class ActionGenerator:
             (ActionStates.Searching, ActionStates.Patrolling): 1,
             (ActionStates.Attacking, ActionStates.Resting): 1,
             (ActionStates.Attacking, ActionStates.Interacting): 1,
+            (ActionStates.Attacking, ActionStates.Celebrating): 1
             # Add more transitions as needed
         }
 
         # Check if the current and next actions correspond to a defined transition
-        transition_key = (current_action, next_action)
+        transition_key = (ActionStates[ActionStates.get_action(current_action)], ActionStates[ActionStates.get_action(next_action)])
         if transition_key in transitions:
-            reward = transitions[transition_key]
+            transition_reward = transitions[transition_key]
 
-        print("\nTransition Reward = ", reward)
+        print("\nTransition Reward = ", transition_reward)
 
         # preferable action states for each personality
         personality_preferences = {
@@ -106,61 +166,36 @@ class ActionGenerator:
 
         # Check if next_action is one of the preferred actions for each personality trait
         for trait, preferences in personality_preferences.items():
-            # print("Personality_vector["+str(trait)+"] = "+str(personality_vector[trait]))
-            index = index_to_range_key(personality_vector[trait])
-            # print("Mapping - trait:"+str(trait)+" to index:"+str(index))
-            if next_action in preferences[index]:
-                reward += 1
+            index = Range.index_to_range_key(personality_vector[trait])
+            if ActionStates[ActionStates.get_action(next_action)] in preferences[index]:
+                preference_reward += 1
 
-        print("Preference Reward = ", reward)
+        print("Preference Reward = ", preference_reward)
+
+        reward = transition_reward + preference_reward
         
-        # Normalize the total reward to the range [-1, 1]
-        max_reward = max(reward for reward in transitions.values()) + len(personality_preferences)  # Add maximum additional reward
+        # Normalize the total reward 
+        max_reward = max(reward for reward in transitions.values()) + len(personality_preferences)  # Assuming max reward for preference is 1 per trait
         min_reward = min(reward for reward in transitions.values())
-        if max_reward != min_reward:
-            normalized_reward = 2 * (reward - min_reward) / (max_reward - min_reward) - 1
-        else:
-            normalized_reward = 0  # Handle the case where all rewards are the same
+        normalized_reward = self.normalize_reward(reward, min_reward, max_reward)
 
-        print("Normalised Reward = ", reward)
-        print("\n")
+        print("Normalised Reward = ", normalized_reward)
 
         return normalized_reward
 
-    def action_generator(self, personality_vector, emotional_state_index, previous_action_state_index) :
-        # Choose action based on epsilon-greedy policy
-        if np.random.rand() < self.epsilon: 
-            final_action_state_index = np.random.randint(self.no_of_action_states)  # Choose random action
-            print("\nRandom final action state index = ", final_action_state_index)
-        else:
-            # initialize an array for 10 action states with value 1
-            q_val_array = np.ones(10)
+    def normalize_reward(self, reward, min_reward, max_reward):
+        # Avoid division by zero
+        if min_reward == max_reward:
+            return 0
 
-            for i in (0,4):     # 5 ocean personalities
-                for j in (0,9) :    # 10 action states
-                    # Q value of jTH action state = product of Q value of the jTH action state of each ocean personality
-                    
-                    personality_index = index_to_range_value(personality_vector[i])
+        # Shift and scale the reward to the range [0, 1]
+        scaled_reward = (reward - min_reward) / (max_reward - min_reward)
 
-                    # print("i - ", i)
-                    # print("Personality index - ", personality_index)
-                    # print("Emotional state index - ", emotional_state_index)
-                    # print("Prev axn state index - ", previous_action_state_index)
-                    # print("j - ", j)
-                    q_val_array[j] *= self.Q[i][personality_index][emotional_state_index.value][previous_action_state_index.value][j]
-            
-            # select action state with max q value
-            final_action_state_index = np.argmax(q_val_array)  # gives the index of that action state
-            print("\nFinal action state index = ", final_action_state_index)
+        # Apply the sigmoid function for smoother scaling
+        sigmoid = lambda x: 1 / (1 + math.exp(-x))
+        normalized_reward = 2 * sigmoid(scaled_reward) - 1
 
-        print("\n")
-        return final_action_state_index
-
-    def get_dominant_personality(self, personality_vector) :
-        dominant_personality_index = np.argmax(personality_vector)
-        print("\nDominant Personality = ", dominant_personality_index)
-        print("\n")
-        return dominant_personality_index
+        return normalized_reward
 
     def q_learning(self, personality_vector, current_state, next_action_state):
         print("\nStarting with Q Learning ...")
@@ -168,7 +203,7 @@ class ActionGenerator:
         # Define current and next states
         print("\nPersonality Vector:", personality_vector)
         print("Current State:", current_state)
-        print("Next Action State:", get_action(next_action_state))
+        print("Next Action State:", ActionStates.get_action(next_action_state))
 
         # Execute action and observe reward
         reward = self.calculate_reward(personality_vector, current_state[1].value, next_action_state)
@@ -176,9 +211,9 @@ class ActionGenerator:
 
         # Update Q-value using Q-learning update rule
         # for dominant personality
-        dominant_personality_index = self.get_dominant_personality(personality_vector)
-        q_range_index = index_to_range_value(personality_vector[dominant_personality_index])
-        print("\nDominant Personality :", get_personality(dominant_personality_index))
+        dominant_personality_index = PersonalityIndex.get_dominant_personality(personality_vector)
+        q_range_index = Range.index_to_range_value(personality_vector[dominant_personality_index])
+        print("\nDominant Personality :", PersonalityIndex.get_personality(dominant_personality_index))
         print("\nQ Range Index:", q_range_index)
 
         q_current = self.Q[dominant_personality_index][q_range_index][current_state[0].value][current_state[1].value][next_action_state]
@@ -192,8 +227,8 @@ class ActionGenerator:
         self.Q[dominant_personality_index][q_range_index][current_state[0].value][current_state[1].value][next_action_state] = updated_q_value
 
         # Q table for 
-        q_table_slice = self.Q[dominant_personality_index][q_range_index][current_state[0].value]
-        # print("Q table slice:")
-        # print(q_table_slice)
+        q_table_slice = self.Q[dominant_personality_index][q_range_index][current_state[0].value][current_state[1].value]
+        print("Q table slice:")
+        self.print_q_table(q_table_slice, current_state[0].value, current_state[1].value, dominant_personality_index)
 
         self.save_q_table()
