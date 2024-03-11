@@ -28,4 +28,5 @@ __pycache__/
 
 /AI/DialogueGenerator/my_env
 AI/ActionGenerator/my_env
+AI/EmotionClassifier/my_env
 /AI/DialogueGenerator/logs

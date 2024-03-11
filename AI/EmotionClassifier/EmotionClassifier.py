@@ -64,7 +64,7 @@ class EmotionClassifier:
         print(classification_report(self.y_test, y_pred))
         print("\nModel evaluation completed.")
 
-    def save_model(self, filename='emotion_classifier.joblib'):
+    def save_model(self, filename='emotion_classifier_model.joblib'):
         # Save the trained model
-        joblib.dump(self.model, 'emotion_classifier.joblib')
+        joblib.dump(self.model, 'emotion_classifier_model.joblib')
         print("\nTrained model saved.")
