@@ -12,13 +12,7 @@ class ActionGenerator:
         self.no_of_emotional_states = 28  # 10 emotional states
         self.no_of_action_states = 10  # 10 action states
 
-        try:
-            self.Q = np.load('Action_Q_Table.npy')
-            logging("info", "Q-table loaded successfully.")
-        except Exception as e:
-            logging("error", str(e))
-            self.Q = self.initialize_q_table()
-            logging("info", "Initialized new Q-table.")
+        self.load_q_table()
 
         # Parameters
         self.alpha = 0.1  # Learning rate
@@ -40,6 +34,15 @@ class ActionGenerator:
         except Exception as e:
             logging("error", str(e))
         
+    def load_q_table(self):
+        try:
+            self.Q = np.load('Action_Q_Table.npy')
+            logging("info", "Q-table loaded successfully.")
+        except Exception as e:
+            logging("error", str(e))
+            self.Q = self.initialize_q_table()
+            logging("info", "Initialized new Q-table.")
+
     def print_q_table(self, q_table, emotion_index, prev_action_index, personality=None, title="Q table"):
         action_names = [ActionStates.get_action(i) for i in range(self.no_of_action_states)]
         headers = ["Prev Action"] + list(action_names)
