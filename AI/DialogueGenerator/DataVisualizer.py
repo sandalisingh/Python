@@ -15,7 +15,7 @@ class DataVisualizer:
         table.add_rows(rows)  # Convert to list of lists
         table.title = title
         table.max_table_width = 100
-        print(table)
+        print(table)  
 
     @staticmethod
     def print_tensor_dict(title, data_dict):
@@ -73,3 +73,14 @@ class DataVisualizer:
         plt.ylabel('Output Sequence')
         plt.colorbar()
         plt.show()
+
+    @staticmethod
+    def plot_loss_and_accuracy(loss, accuracy):
+        plt.plot(loss, label='Loss')
+        plt.plot(accuracy, label='Accuracy')
+        plt.xlabel('Epoch')
+        plt.ylabel('Value')
+        plt.title('Model Training History')
+        plt.legend()
+        plt.savefig('training_history.png')
+        plt.close()

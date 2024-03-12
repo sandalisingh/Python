@@ -5,7 +5,7 @@ import os
 import pandas as pd
 from States import logging, EmotionStates
 from tensorflow.keras.layers import RepeatVector, Reshape, Flatten, Input, InputLayer, Embedding, Concatenate, Add, Attention
-from tensorflow.keras.layers import MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector
+from tensorflow.keras.layers import MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector, Lambda
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras import backend
@@ -62,18 +62,15 @@ class DialogueGenerator:
         positional_output = positional_layer(embedding_output)
         
         projection_output = Dense(self.HIDDEN_DIM, name='projection_of_prev_seq')(positional_output)
-
         lstm_output, _ , _ = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_prev_seq')(projection_output)
 
-        summary = tf.expand_dims(summary,axis=1)
+        summary = Reshape((1, self.HIDDEN_DIM), name='expand_dim_of_summary')(summary)
 
         attention_output = Attention(name='attention_to_prev_and_encoder_outputs')([summary,lstm_output])
         residual_prev_seq_output = Add(name='add_residual_connection_of_prev_seq')([lstm_output, attention_output])
 
         emotion_embedding_output = Embedding(len(list(EmotionStates)), self.HIDDEN_DIM, mask_zero=True, name='dense_embedding_of_emotion')(emotion)
-
         emotion_attention_output = Attention(name='attention_to_emotion')([emotion_embedding_output, residual_prev_seq_output])
-
         residual_emotion_output = Add(name='add_residual_connection_of_prev_seq_and_emotion')([emotion_attention_output, residual_prev_seq_output])
         normalised_output = LayerNormalization(name='normalization_of_seq')(residual_emotion_output)
         dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer', activation='softmax')(normalised_output)
@@ -103,7 +100,7 @@ class DialogueGenerator:
     #   OUTPUT INSPECTION
 
     def inspect_layer_outputs(self):
-        chat_text, text_response, emotion = DataManager.prepare_data("TestData.csv")
+        chat_text, text_response, emotion = DataManager.prepare_data("Conversation3.csv")
         
         # Enable eager execution
         tf.config.run_functions_eagerly(True)  
@@ -141,14 +138,23 @@ class DialogueGenerator:
 
     #   TRAINING
 
+    def evaluate_model(self, encoder_inputs, emotion_inputs, decoder_inputs, decoder_outputs):
+        loss, accuracy = self.MODEL.evaluate([encoder_inputs, emotion_inputs, decoder_inputs], decoder_outputs)
+        logging("info", f"Model Evaluation - Loss: {loss}, Accuracy: {accuracy}")
+        return loss, accuracy
+
     def train_model(self, encoder_inputs, emotion_inputs, decoder_inputs, decoder_outputs, batch_size, epochs):
         self.MODEL.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
         
-        self.MODEL.fit([encoder_inputs, emotion_inputs, decoder_inputs], decoder_outputs, batch_size=batch_size, 
-            epochs=epochs)  # validation_split=0.2
-        
+        # Define validation split for evaluation during training
+        validation_split = 0.2  # 20% of training data for validation
+
+        # Train the model with validation split
+        history = self.MODEL.fit([encoder_inputs, emotion_inputs, decoder_inputs], decoder_outputs, batch_size=batch_size, 
+                    epochs=epochs, validation_split=validation_split)
+
         logging("info", "Model trained.")
- 
+    
     def create_train_and_save_model(self):
         chat_text, text_response, emotion = DataManager.prepare_data("TestData.csv")
         
@@ -156,9 +162,15 @@ class DialogueGenerator:
         encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
 
         # Train the model
-        self.train_model(encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs, batch_size=64, epochs=1)           
+        self.train_model(encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs, batch_size=64, epochs=1)       
+
+        # Evaluate the model
+        loss, accuracy = self.evaluate_model(encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs)    
 
         self.save_model()
+
+        # Plot and save the training history
+        DataVisualizer.plot_loss_and_accuracy(loss, accuracy)
 
     #   GENERTE RESPONSE
 

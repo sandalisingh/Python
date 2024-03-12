@@ -23,7 +23,7 @@ class ActionGenerator:
 
     def initialize_q_table(self):
         # initialize Q table
-        # 5 ocean personality * 3 ranges (0-3,4-7,8-10) * 10 emotional states * 10 FROM action states * 10 TO action states
+        # 5 ocean personality * 3 ranges (0-3,4-7,8-10) * 28 emotional states * 10 FROM action states * 10 TO action states
         return np.random.random((self.no_of_personality_states, self.no_of_ranges_of_personality_states,
                                  self.no_of_emotional_states, self.no_of_action_states, self.no_of_action_states))
 

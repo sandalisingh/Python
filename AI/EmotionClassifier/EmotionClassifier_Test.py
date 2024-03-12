@@ -1,12 +1,8 @@
 import joblib
+from EmotionClassifier import EmotionClassifier
 
-# Load the saved model
-model = joblib.load('emotion_classifier_model.joblib')
-
-def emotion_classifier(text):
-    predicted_emotion = model.predict([text])[0]
-    return predicted_emotion
+emotion_classifier = EmotionClassifier()
 
 while(True) :
     text = input("Text : ")
-    print("Emotion :", emotion_classifier(text))
+    print("Emotion :", emotion_classifier.predict(text))
