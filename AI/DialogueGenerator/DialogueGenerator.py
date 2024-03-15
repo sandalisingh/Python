@@ -4,8 +4,7 @@ import tensorflow as tf
 import os
 import pandas as pd
 from States import logging, EmotionStates
-from tensorflow.keras.layers import RepeatVector, Reshape, Flatten, Input, InputLayer, Embedding, Concatenate, Add, Attention
-from tensorflow.keras.layers import MultiHeadAttention, LSTM, Dense, LayerNormalization, RepeatVector, Lambda
+from tensorflow.keras.layers import *
 from tensorflow.keras.models import Model, Sequential, load_model
 from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras import backend
@@ -23,81 +22,87 @@ class DialogueGenerator:
         self.VOCAB_SIZE = 10000   # Vocabulary size
         self.EMBEDDING_DIM = 300  # Embedding dimension
         self.HIDDEN_DIM = 512     # Hidden dimension for LSTM layers
-        self.EMOTION_SIZE = 1
-        self.MODEL_NAME = "dialogue_generator_model.h5"
+        self.MODEL_NAME = "dialogue_generator_model"
         self.MODEL = None
         self.TOKENIZER = Tokenizer(self.VOCAB_SIZE)
 
-        self.init_model()
+        self.load_model()
 
-    def init_model(self):
+    def load_model(self):
         try:
-            self.MODEL = load_model(self.MODEL_NAME)
+            self.MODEL = load_model(self.MODEL_NAME+".keras")
             logging("info", "Model loaded.")
         except Exception as e:
             logging("error", "Error loading model: "+str(e))
             self.define_model()
-       
-    #   MODEL ARCHITECTURE 
-
-    def define_encoder(self):
-        chat_text = Input(shape=(self.MAX_SEQ_LENGTH,), name='encoder_input_chat_text')
-        embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_chat_text')(chat_text)
-        
-        positional_layer = PositionalEncoding(self.MAX_SEQ_LENGTH, self.EMBEDDING_DIM, name='positional_encoding_of_chat_text')
-        positional_output = positional_layer(embedding_output)
-        
-        attention_output = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='multi_head_attention_to_chat_text')(positional_output, key=positional_output, value=positional_output)
-        residual_output = Add(name='add_residual_connection_of_chat_text')([positional_output, attention_output])
-        normalised_output = LayerNormalization(name='normalization_of_chat_text')(residual_output)
-        _, summary , _ = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_chat_text')(normalised_output)
-        return chat_text , summary
-
-    def define_decoder(self, summary):
-        emotion = Input(shape=(1,), name='decoder_input1_emotion')
-        prev_seq = Input(shape=(self.MAX_SEQ_LENGTH,), name='decoder_input2_prev_seq')
-        embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='dense_embedding_of_prev_seq')(prev_seq)
-        
-        positional_layer = PositionalEncoding(self.MAX_SEQ_LENGTH, self.EMBEDDING_DIM, name='positional_encoding_of_prev_seq')
-        positional_output = positional_layer(embedding_output)
-        
-        projection_output = Dense(self.HIDDEN_DIM, name='projection_of_prev_seq')(positional_output)
-        lstm_output, _ , _ = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_prev_seq')(projection_output)
-
-        summary = Reshape((1, self.HIDDEN_DIM), name='expand_dim_of_summary')(summary)
-
-        attention_output = Attention(name='attention_to_prev_and_encoder_outputs')([summary,lstm_output])
-        residual_prev_seq_output = Add(name='add_residual_connection_of_prev_seq')([lstm_output, attention_output])
-
-        emotion_embedding_output = Embedding(len(list(EmotionStates)), self.HIDDEN_DIM, mask_zero=True, name='dense_embedding_of_emotion')(emotion)
-        emotion_attention_output = Attention(name='attention_to_emotion')([emotion_embedding_output, residual_prev_seq_output])
-        residual_emotion_output = Add(name='add_residual_connection_of_prev_seq_and_emotion')([emotion_attention_output, residual_prev_seq_output])
-        normalised_output = LayerNormalization(name='normalization_of_seq')(residual_emotion_output)
-        dense_output = Dense(self.VOCAB_SIZE, name='dense_decoder_layer', activation='softmax')(normalised_output)
-        return emotion, prev_seq, dense_output
-
-    def define_model(self):
-        if self.MODEL is None:
-            chat_text, summary = self.define_encoder()
-            emotion, prev_seq, output_seq = self.define_decoder(summary) 
-            self.MODEL = Model([chat_text, emotion, prev_seq], output_seq)
-            
-            logging("info","Model defined.")
-            DataVisualizer.get_model_summary(self.MODEL)
-
-            DataVisualizer.get_arch_flowchat(self.MODEL, "model_graph_plot.png")
-
+    
     def save_model(self):
         if self.MODEL is not None:
             try:
-                self.MODEL.save(os.path.join(os.getcwd(), self.MODEL_NAME))
+                self.MODEL.save(os.path.join(os.getcwd(), self.MODEL_NAME+".keras"))
                 logging("info", "Model saved.")
             except Exception as e:
                 logging("error", "Error saving model: " + str(e))
         else:
             logging("error", "Model not loaded, cannot save.")
+       
+    #   MODEL ARCHITECTURE 
 
-    #   OUTPUT INSPECTION
+    def define_encoder(self):
+        chat_text = Input(shape=(self.MAX_SEQ_LENGTH,), name='chat_text_input')
+        embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='embedding_of_chat_text')(chat_text)
+        
+        positional_layer = PositionalEncoding(self.MAX_SEQ_LENGTH, self.EMBEDDING_DIM, name='positional_encoding_of_chat_text')
+        positional_output = positional_layer(embedding_output)
+        
+        attention_output = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='self_attention_to_chat_text')(positional_output, positional_output)
+        residual_output = Add(name='residual_connection_of_chat_text')([positional_output, attention_output])
+        normalised_output = LayerNormalization(name='normalization_of_chat_text')(residual_output)
+        _, hidden_state, cell_state = LSTM(self.HIDDEN_DIM, return_sequences=False, return_state=True, name='summarization_of_chat_text')(normalised_output)
+
+        return chat_text, normalised_output, hidden_state, cell_state
+
+    def define_decoder(self, processed_chat_text, summary_hidden_state, summary_cell_state):
+        # handle previous sequence
+        prev_seq = Input(shape=(self.MAX_SEQ_LENGTH,), name='prev_seq_input')
+        embedding_output = Embedding(self.VOCAB_SIZE, self.EMBEDDING_DIM, mask_zero=True, name='embedding_of_prev_seq')(prev_seq)
+        
+        positional_layer = PositionalEncoding(self.MAX_SEQ_LENGTH, self.EMBEDDING_DIM, name='positional_encoding_of_prev_seq')
+        positional_output = positional_layer(embedding_output)
+
+        attention_output = Attention(name='self_attention_to_prev_seq')([positional_output, positional_output])
+        residual_of_prev_seq = Add(name='residual_connection_of_prev_seq')([positional_output, attention_output])
+
+        # handle emotion
+        emotion = Input(shape=(1,), name='emotion_input')
+        emotion_embedding = Embedding(len(list(EmotionStates)), self.EMBEDDING_DIM, name='embedding_of_emotion')(emotion)
+
+        # multiple lstm
+        _, lstm_chat_text_hidden_state, lstm_chat_text_cell_state = LSTM(self.HIDDEN_DIM, return_sequences=False, return_state=True, name='lstm_of_chat_text')(processed_chat_text, initial_state=[summary_hidden_state, summary_cell_state])
+        _, lstm_emotion_hidden_state, lstm_emotion_cell_state = LSTM(self.HIDDEN_DIM, return_sequences=False, return_state=True, name='lstm_of_emotion')(emotion_embedding, initial_state=[lstm_chat_text_hidden_state, lstm_chat_text_cell_state])
+        lstm_seq, _, lstm_state = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_prev_seq')(residual_of_prev_seq, initial_state=[lstm_emotion_hidden_state, lstm_emotion_cell_state])
+
+        dense_of_seq = Dense(self.VOCAB_SIZE, name='dense_of_seq', activation='softmax')(lstm_seq)
+        dense_of_state = Dense(self.VOCAB_SIZE, name='dense_of_state', activation='softmax')(lstm_state)
+
+        return emotion, prev_seq, dense_of_seq, dense_of_state
+
+    def define_model(self):
+        if self.MODEL is None:
+            chat_text, processed_chat_text, summary_hidden_state, summary_cell_state = self.define_encoder()
+            emotion, prev_seq, dense_of_seq, dense_of_state = self.define_decoder(processed_chat_text, summary_hidden_state, summary_cell_state) 
+            self.MODEL = Model([chat_text, emotion, prev_seq], [dense_of_seq, dense_of_state])
+            # self.MODEL.name = self.MODEL_NAME
+            
+            logging("info","Model defined.")
+
+            self.save_model()
+
+    #   INSPECTION
+
+    def model_visualization(self):
+        DataVisualizer.get_model_summary(self.MODEL)
+        DataVisualizer.get_arch_flowchat(self.MODEL, "model_graph_plot.png")
 
     def inspect_layer_outputs(self):
         chat_text, text_response, emotion = DataManager.prepare_data("Conversation3.csv")
@@ -150,8 +155,10 @@ class DialogueGenerator:
         validation_split = 0.2  # 20% of training data for validation
 
         # Train the model with validation split
-        history = self.MODEL.fit([encoder_inputs, emotion_inputs, decoder_inputs], decoder_outputs, batch_size=batch_size, 
-                    epochs=epochs, validation_split=validation_split)
+        history = self.MODEL.fit([encoder_inputs, emotion_inputs, decoder_inputs], [decoder_outputs, None], batch_size=batch_size, 
+                    epochs=epochs
+                    # , validation_split=validation_split
+                    )
 
         logging("info", "Model trained.")
     
@@ -167,10 +174,10 @@ class DialogueGenerator:
         # Evaluate the model
         loss, accuracy = self.evaluate_model(encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs)    
 
-        self.save_model()
-
         # Plot and save the training history
         DataVisualizer.plot_loss_and_accuracy(loss, accuracy)
+
+        self.save_model()
 
     #   GENERTE RESPONSE
 

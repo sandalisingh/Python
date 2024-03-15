@@ -1,7 +1,7 @@
 from EmotionGenerator import EmotionGenerator  
 from States import logging, EmotionStates, Range  
 
-personality_vector = [9, 0, 5, 10, 3]
+personality_vector = [9, 0, 5, 1, 10]
 
 environment = input("Environment = ")
 

@@ -125,6 +125,15 @@ class EmotionStates(Enum):
             return None
 
     @staticmethod
+    def string_to_enum(emotion_str):
+        try:
+            key = str(emotion_str).strip().capitalize()
+            return EmotionStates[key]
+        except Exception as e:
+            logging("error", str(e))
+            return None
+
+    @staticmethod
     def get_emoji(emotion):
         emojis = {
             EmotionStates.Admiration: '😊',

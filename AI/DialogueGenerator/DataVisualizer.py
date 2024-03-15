@@ -48,7 +48,7 @@ class DataVisualizer:
 
     @staticmethod
     def get_arch_flowchat(model, file_name):
-        plot_model(model, to_file=file_name, show_shapes=True)
+        plot_model(model, to_file=file_name, show_shapes=True, show_layer_names=True)
   
     @staticmethod
     def visualize_tensor_value_range(layer_index, layer_name, tensor):

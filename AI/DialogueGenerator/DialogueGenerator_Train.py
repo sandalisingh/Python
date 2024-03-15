@@ -8,6 +8,7 @@ dialogue_generator = DialogueGenerator()
 # print(dialogue_generator.model)
 
 # Train the model
+# dialogue_generator.model_visualization()
 dialogue_generator.create_train_and_save_model()
 
 # Inspection
