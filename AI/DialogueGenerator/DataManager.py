@@ -40,52 +40,53 @@ class DataManager:
         tokenizer = Tokenizer(VOCAB_SIZE)
         tokenizer.create_tokenizer(chat_text, text_response)
 
-        chat_text_sequences = tokenizer.TOKENIZER.texts_to_sequences(chat_text)
-        text_response_sequences = tokenizer.TOKENIZER.texts_to_sequences(text_response)
-        DataVisualizer.display_top_rows(pd.DataFrame({'chat_text' : chat_text_sequences, 'emotion' : emotion, 'text_response' : text_response_sequences}), 1, "Token to index")
+        chat_text = tokenizer.TOKENIZER.texts_to_sequences(chat_text)
+        text_response = tokenizer.TOKENIZER.texts_to_sequences(text_response)
+        DataVisualizer.display_top_rows(pd.DataFrame({'chat_text' : chat_text, 'emotion' : emotion, 'text_response' : text_response}), 1, "Token to index")
 
         # Add <end> token to each chat text sequence
-        for seq in chat_text_sequences:
+        for seq in chat_text:
             seq.append(tokenizer.END_TOKEN)
         
         # Add <start> token to each text response sequence
-        for seq in text_response_sequences:
+        for seq in text_response:
             seq.insert(0, tokenizer.START_TOKEN)
         
         # Add <end> token to each text response sequence
-        for seq in text_response_sequences:
+        for seq in text_response:
             seq.append(tokenizer.END_TOKEN)
 
-        DataVisualizer.display_top_rows(pd.DataFrame({'chat_text' : chat_text_sequences, 'emotion' : emotion, 'text_response' : text_response_sequences}), 1, "Marking start and end of sequences")
+        DataVisualizer.display_top_rows(pd.DataFrame({'chat_text' : chat_text, 'emotion' : emotion, 'text_response' : text_response}), 1, "Marking start and end of sequences")
 
         # Pad sequences
-        encoder_inputs_chat_text = tf.keras.preprocessing.sequence.pad_sequences(chat_text_sequences, maxlen=MAX_SEQ_LENGTH, padding='post')
-        decoder_inputs = tf.keras.preprocessing.sequence.pad_sequences(text_response_sequences, maxlen=MAX_SEQ_LENGTH, padding='post')
-        DataVisualizer.display_top_rows(pd.DataFrame({'chat_text' : encoder_inputs_chat_text.tolist(), 'emotion' : emotion, 'text_response' : decoder_inputs.tolist()}), 1, "Padding sequences for constant frame length")
+        chat_text = tf.keras.preprocessing.sequence.pad_sequences(chat_text, maxlen=MAX_SEQ_LENGTH, padding='post')
+        text_response = tf.keras.preprocessing.sequence.pad_sequences(text_response, maxlen=MAX_SEQ_LENGTH, padding='post')
+        DataVisualizer.display_top_rows(pd.DataFrame({'chat_text' : chat_text.tolist(), 'emotion' : emotion, 'text_response' : text_response.tolist()}), 1, "Padding sequences for constant frame length")
 
         # Shift targets for teacher forcing
-        decoder_outputs = np.zeros_like(decoder_inputs)
-        decoder_outputs[:, :-1] = decoder_inputs[:, 1:]                                    
-        decoder_outputs[:, -1] = 0
+        output_seq = np.zeros_like(text_response)
+        output_seq[:, :-1] = text_response[:, 1:]                                    
+        output_seq[:, -1] = 0
 
         # Map emotion strings to their corresponding enum values
-        emotion_inputs = [EmotionStates.get_emotion_index(emo) for emo in emotion] 
-        DataVisualizer.display_top_rows(pd.DataFrame({'chat_text' : encoder_inputs_chat_text.tolist(), 'emotion' : emotion_inputs, 'text_response' : decoder_inputs.tolist()}), 1, "Emotion to index")
+        emotion = [EmotionStates.get_emotion_index(emo) for emo in emotion] 
+        DataVisualizer.display_top_rows(pd.DataFrame({'chat_text' : chat_text.tolist(), 'emotion' : emotion, 'text_response' : text_response.tolist()}), 1, "Emotion to index")
 
         # convert list to vector
-        emotion_inputs = np.array(emotion_inputs)
-        emotion_inputs = np.expand_dims(emotion_inputs, axis=1)
+        emotion = np.array(emotion)
+        emotion = np.expand_dims(emotion, axis=1)
         
         logging("info","Data preprocessed.")
 
-        encoder_inputs_chat_text = tf.convert_to_tensor(encoder_inputs_chat_text, dtype=tf.float32)
-        emotion_inputs = tf.convert_to_tensor(emotion_inputs, dtype=tf.float32)
-        decoder_inputs = tf.convert_to_tensor(decoder_inputs, dtype=tf.float32)
-        decoder_outputs = tf.convert_to_tensor(decoder_outputs, dtype=tf.float32)
+        chat_text = tf.convert_to_tensor(chat_text, dtype=tf.float32)
+        emotion = tf.convert_to_tensor(emotion, dtype=tf.float32)
+        text_response = tf.convert_to_tensor(text_response, dtype=tf.float32)
+        output_seq = tf.convert_to_tensor(output_seq, dtype=tf.float32)
+        output_state = output_seq[:, -1]  # extract last row
 
-        DataVisualizer.print_tensor_dict("Model definition: Inputs and Outputs", {'encoder_input_chat_text' : encoder_inputs_chat_text, 'decoder_input_emotion' : emotion_inputs, 'decoder_input_prev_seq' : decoder_inputs, 'decoder_output' : decoder_outputs})
+        DataVisualizer.print_tensor_dict("Model definition: Inputs and Outputs", {'chat_text_input' : chat_text, 'emotion_input' : emotion, 'prev_seq_input' : text_response, 'output_seq' : output_seq, 'output_state': output_state})
         
-        return encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs
+        return chat_text, emotion, text_response, output_seq, output_state
 
     @staticmethod
     def pad_punctuation(text):

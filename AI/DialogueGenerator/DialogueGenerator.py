@@ -119,7 +119,7 @@ class DialogueGenerator:
 
         DataVisualizer.display_top_rows(pd.DataFrame({"chat_text": chat_text, "emotion": emotion, "text_response": text_response}), 1, "Input")
 
-        chat_text, emotion, prev_seq, _ = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)   
+        chat_text, emotion, prev_seq, _, _ = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)   
 
         # Create a model to extract intermediate outputs
         intermediate_model = Model(inputs=self.MODEL.inputs, outputs=[layer.output for layer in self.MODEL.layers])
@@ -143,39 +143,38 @@ class DialogueGenerator:
 
     #   TRAINING
 
-    def evaluate_model(self, encoder_inputs, emotion_inputs, decoder_inputs, decoder_outputs):
-        loss, accuracy = self.MODEL.evaluate([encoder_inputs, emotion_inputs, decoder_inputs], decoder_outputs)
-        logging("info", f"Model Evaluation - Loss: {loss}, Accuracy: {accuracy}")
-        return loss, accuracy
+    def evaluate_model(self, chat_text, emotion, prev_seq, output_seq, output_state):
+        loss, dense_of_seq_loss, dense_of_state_loss, dense_of_seq_accuracy, dense_of_state_accuracy = self.MODEL.evaluate([chat_text, emotion, prev_seq], [output_seq, output_state])
+        logging("info", f"Model Evaluation\n\tloss: {loss}\n\tdense_of_seq_loss: {dense_of_seq_loss}\n\tdense_of_state_loss: {dense_of_state_loss}\n\tdense_of_seq_accuracy: {dense_of_seq_accuracy}\n\tdense_of_state_accuracy: {dense_of_state_accuracy}")
+        return loss, dense_of_seq_loss, dense_of_state_loss, dense_of_seq_accuracy, dense_of_state_accuracy
 
-    def train_model(self, encoder_inputs, emotion_inputs, decoder_inputs, decoder_outputs, batch_size, epochs):
+    def train_model(self, chat_text_input, emotion_input, prev_seq, output_seq, output_state, batch_size, epochs):
         self.MODEL.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
         
         # Define validation split for evaluation during training
         validation_split = 0.2  # 20% of training data for validation
 
         # Train the model with validation split
-        history = self.MODEL.fit([encoder_inputs, emotion_inputs, decoder_inputs], [decoder_outputs, None], batch_size=batch_size, 
-                    epochs=epochs
-                    # , validation_split=validation_split
-                    )
+        history = self.MODEL.fit([chat_text_input, emotion_input, prev_seq], [output_seq, output_state], 
+        batch_size=batch_size, epochs=epochs, validation_split=validation_split)
 
         logging("info", "Model trained.")
     
     def create_train_and_save_model(self):
-        chat_text, text_response, emotion = DataManager.prepare_data("TestData.csv")
+        chat_text, text_response, emotion = DataManager.prepare_data("Conversation3.csv")
         
         # Preprocess data
-        encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
+        chat_text_input, emotion_input, prev_seq, output_seq, output_state = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
 
         # Train the model
-        self.train_model(encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs, batch_size=64, epochs=1)       
+        self.train_model(chat_text_input, emotion_input, prev_seq, output_seq, output_state, batch_size=64, epochs=1)       
 
         # Evaluate the model
-        loss, accuracy = self.evaluate_model(encoder_inputs_chat_text, emotion_inputs, decoder_inputs, decoder_outputs)    
+        loss, dense_of_seq_loss, dense_of_state_loss, dense_of_seq_accuracy, dense_of_state_accuracy = self.evaluate_model(chat_text_input, emotion_input, prev_seq, output_seq, output_state)    
 
         # Plot and save the training history
-        DataVisualizer.plot_loss_and_accuracy(loss, accuracy)
+        DataVisualizer.plot_loss_and_accuracy(dense_of_seq_loss, dense_of_seq_accuracy, 'Model evaluation: output sequence', 'evaluation_of_output_seq')
+        DataVisualizer.plot_loss_and_accuracy(dense_of_state_loss, dense_of_state_accuracy, 'Model evaluation: output states', 'evaluation_of_output_states')
 
         self.save_model()
 
@@ -193,14 +192,18 @@ class DialogueGenerator:
     def generate_response_with_greedy_approach(self, chat_text_str, emotion_str):
         print("\n\n-> GENERATE RESPONSE")
 
-        chat_text_input, emotion_input, _, prev_seq = DataManager.preprocess_data([chat_text_str], [""], [emotion_str], self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
+        chat_text_input, emotion_input, prev_seq, _, _ = DataManager.preprocess_data([chat_text_str], [""], [emotion_str], self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
+        prev_seq = tf.tensor_scatter_nd_update(prev_seq, indices=[[0, 1]], updates=[0])
+
+        DataVisualizer.print_tensor_dict("Input to model", {"chat_text": chat_text_input, "emotion": emotion_input, "prev_seq": prev_seq})
 
         for i in range(1, self.MAX_SEQ_LENGTH):
             # Predict the next token
-            predictions = self.MODEL.predict([chat_text_input, emotion_input, prev_seq])
+            _, predicted_state = self.MODEL.predict([chat_text_input, emotion_input, prev_seq])
             
             # Get the token index with the highest probability (greedy approach)
-            predicted_token_index = np.argmax(predictions[0, i - 1, :])
+            predicted_token_index = np.argmax(predicted_state[0, :])
+            print("TOKEN = ", predicted_token_index)
             
             # Update the previous sequence tensor
             updated_value = tf.constant(predicted_token_index, dtype=tf.int32)
@@ -217,39 +220,35 @@ class DialogueGenerator:
         return response_text 
 
     def generate_response_with_beam_search(self, chat_text_str, emotion_str, beam_width=5):
-        # Preprocess data
-        chat_text_input, emotion_input, _, prev_seq = DataManager.preprocess_data([chat_text_str], [""], [emotion_str], self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
-        
-        # Update the first element from <end> to <start>
-        # prev_seq = tf.tensor_scatter_nd_update(prev_seq, indices=[[0, 0]], updates=[self.TOKENIZER.START_TOKEN])
-        
-        print("prev_seq : ") 
-        print(prev_seq) 
+        # Preprocess data 
+        chat_text_input, emotion_input, prev_seq, _, _ = DataManager.preprocess_data([chat_text_str], [""], [emotion_str], self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
+        prev_seq = tf.tensor_scatter_nd_update(prev_seq, indices=[[0, 1]], updates=[0])
+
+        DataVisualizer.print_tensor_dict("Input to model", {"chat_text": chat_text_input, "emotion": emotion_input, "prev_seq": prev_seq})
 
         # Initialize beam search set
-        beam = {(tuple(prev_seq.numpy().flatten()), 0)}
+        beam = [(prev_seq, 0)]
 
         # Initialize the final generated sequences
-        final_sequences = set()
+        final_sequences_set = set()
 
         # Main loop for generating sequences
         for _ in range(self.MAX_SEQ_LENGTH):
-            candidates = set()
-            completed_sequences = set()
+            candidates_set = set()
+            completed_sequences_set = set()
             for prev_seq, score in beam:
                 # Predict the next token probabilities
-                predictions = self.MODEL.predict([chat_text_input, emotion_input, prev_seq])
+                _, predicted_state = self.MODEL.predict([chat_text_input, emotion_input, prev_seq])
 
                 # Get the top tokens with their probabilities
-                # top_tokens = np.argsort(predictions[0, -1])[-beam_width:]
-                top_tokens = np.argsort(predictions[0, -1])[-beam_width:][::-1]
+                top_token_indices = np.argsort(predicted_state[0])[-beam_width:]
 
-                print("Top tokens:")
-                print(top_tokens)
+                print("Top tokens indices:")
+                print(top_token_indices)
 
-                for token in top_tokens:
-                    print("Token:")
-                    print(token)
+                for token_index in top_token_indices:
+                    print("Token index:")
+                    print(token_index)
 
                     # Create a candidate sequence
                     candidate_seq = np.copy(prev_seq)
@@ -258,10 +257,10 @@ class DialogueGenerator:
                     next_token_position = np.where(candidate_seq == 0)[0][0]
 
                     # Insert the token at the correct position
-                    candidate_seq[0, next_token_position] = token
+                    candidate_seq[0, next_token_position] = token_index
 
                     # Calculate the score for the candidate sequence
-                    candidate_score = score - np.log(predictions[0, -1, token])
+                    candidate_score = score - np.log(predicted_state[0, token_index])
 
                     print("Candidate seq:")
                     print(candidate_seq)
@@ -269,30 +268,38 @@ class DialogueGenerator:
                     print(candidate_score)
 
                     # Check if the sequence is complete
-                    if token == self.TOKENIZER.END_TOKEN:
-                        completed_sequences.append((tuple(candidate_seq.numpy().flatten()), candidate_score))
+                    if token_index == self.TOKENIZER.END_TOKEN:
+                        if candidate_seq in completed_sequences_set:
+                            if completed_sequences_set[candidate_seq] < candidate_score:
+                                completed_sequences_set[candidate_seq] = candidate_score # update the max score if the sequence already present 
+                        else:
+                            completed_sequences_set.add((candidate_seq, candidate_score))
                     else:
-                        candidates.append((tuple(candidate_seq.numpy().flatten()), candidate_score))
+                        if candidate_seq in candidates_set: 
+                            if candidates_set[candidate_seq] < candidate_score:
+                                candidates_set[candidate_seq] = candidate_score # update the max score if the sequence already present 
+                        else:
+                            candidates_set.add((candidate_seq, candidate_score))
 
             # Select top candidates to continue beam search
-            beam = set(sorted(candidates, key=lambda x: x[1])[:beam_width])
+            beam = set(sorted(candidates_set, key=lambda x: x[1])[:beam_width])
 
             # Check for completion of sequences
-            final_sequences.update(completed_sequences)
+            final_sequences_set.update(completed_sequences_set)
 
             print("Beam search candidates:")
             print(beam)
             print("Completed sequences:")
-            print(completed_sequences)
+            print(completed_sequences_set)
             print("Final sequences:")
-            print(final_sequences)
+            print(final_sequences_set)
 
-            if final_sequences:
-                final_sequences = set(sorted(final_sequences, key=lambda x: x[1]))
-                best_seq = final_sequences.pop()[0]
+            if final_sequences_set:
+                final_sequences_set = set(sorted(final_sequences_set, key=lambda x: x[1]))
+                best_seq = final_sequences_set.pop()[0]
 
                 # Extract and print all final sequences
-                all_sequences = [self.sequence_to_text(np.array([seq[0]])) for seq in final_sequences]
+                all_sequences = [self.sequence_to_text(np.array([seq[0]])) for seq in final_sequences_set]
                 print("All Final Sequences:")
                 for seq in all_sequences:
                     print(seq)

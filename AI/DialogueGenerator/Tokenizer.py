@@ -42,7 +42,7 @@ class Tokenizer():
             
             self.save_tokenizer()
         print("Tokenizer size = ", self.VOCAB_SIZE)
-        self.print_tokenizer()
+        # self.print_tokenizer()
 
     def save_tokenizer(self):
         with open(self.TOKENIZER_NAME, 'wb') as tokenizer_file:

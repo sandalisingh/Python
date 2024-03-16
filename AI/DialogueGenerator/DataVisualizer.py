@@ -75,12 +75,12 @@ class DataVisualizer:
         plt.show()
 
     @staticmethod
-    def plot_loss_and_accuracy(loss, accuracy):
+    def plot_loss_and_accuracy(loss, accuracy, title='Model Training History', file_name='training_history.png'):
         plt.plot(loss, label='Loss')
         plt.plot(accuracy, label='Accuracy')
         plt.xlabel('Epoch')
         plt.ylabel('Value')
-        plt.title('Model Training History')
+        plt.title(title)
         plt.legend()
-        plt.savefig('training_history.png')
+        plt.savefig(file_name)
         plt.close()
