@@ -182,8 +182,9 @@ class DialogueGenerator:
 
     def sequence_to_text(self, prev_seq):
         # Convert the sequence of token indices to text
-        response_tokens = [self.TOKENIZER.TOKENIZER.index_word.get(idx.numpy(), "<OOV>") for idx in tf.reshape(prev_seq, (-1,))]
-        
+        response_tokens = [self.TOKENIZER.TOKENIZER.index_word.get(idx.numpy(), "") for idx in tf.reshape(prev_seq[:,:,1:], (-1,))]
+        response_tokens = [token for token in response_tokens if token!=""]
+
         # Remove tokens after <end> token
         end_index = response_tokens.index('<end>') if '<end>' in response_tokens else len(response_tokens)
         response_text = ' '.join(response_tokens[:end_index])
@@ -227,34 +228,30 @@ class DialogueGenerator:
         DataVisualizer.print_tensor_dict("Input to model", {"chat_text": chat_text_input, "emotion": emotion_input, "prev_seq": prev_seq})
 
         # Initialize beam search set
-        beam = [(prev_seq, 0)]
+        beam_list = [(prev_seq, 0)]
 
         # Initialize the final generated sequences
-        final_sequences_set = set()
+        final_sequences_list = []
 
         # Main loop for generating sequences
-        for _ in range(self.MAX_SEQ_LENGTH):
-            candidates_set = set()
-            completed_sequences_set = set()
-            for prev_seq, score in beam:
+        for i in range(self.MAX_SEQ_LENGTH-1):
+            candidates_list = []
+            completed_sequences_list = []
+            for prev_seq, score in beam_list:
+
                 # Predict the next token probabilities
                 _, predicted_state = self.MODEL.predict([chat_text_input, emotion_input, prev_seq])
 
                 # Get the top tokens with their probabilities
                 top_token_indices = np.argsort(predicted_state[0])[-beam_width:]
-
-                print("Top tokens indices:")
-                print(top_token_indices)
+                top_token_indices = top_token_indices[top_token_indices != 0]
 
                 for token_index in top_token_indices:
-                    print("Token index:")
-                    print(token_index)
-
                     # Create a candidate sequence
                     candidate_seq = np.copy(prev_seq)
 
                     # Find the position where the next token should be inserted
-                    next_token_position = np.where(candidate_seq == 0)[0][0]
+                    next_token_position = np.where(candidate_seq == 0)[1][0]
 
                     # Insert the token at the correct position
                     candidate_seq[0, next_token_position] = token_index
@@ -262,55 +259,26 @@ class DialogueGenerator:
                     # Calculate the score for the candidate sequence
                     candidate_score = score - np.log(predicted_state[0, token_index])
 
-                    print("Candidate seq:")
-                    print(candidate_seq)
-                    print("Candidate score:")
-                    print(candidate_score)
-
                     # Check if the sequence is complete
                     if token_index == self.TOKENIZER.END_TOKEN:
-                        if candidate_seq in completed_sequences_set:
-                            if completed_sequences_set[candidate_seq] < candidate_score:
-                                completed_sequences_set[candidate_seq] = candidate_score # update the max score if the sequence already present 
-                        else:
-                            completed_sequences_set.add((candidate_seq, candidate_score))
+                        completed_sequences_list.append((candidate_seq, candidate_score))
                     else:
-                        if candidate_seq in candidates_set: 
-                            if candidates_set[candidate_seq] < candidate_score:
-                                candidates_set[candidate_seq] = candidate_score # update the max score if the sequence already present 
-                        else:
-                            candidates_set.add((candidate_seq, candidate_score))
+                        candidates_list.append((candidate_seq, candidate_score))
 
             # Select top candidates to continue beam search
-            beam = set(sorted(candidates_set, key=lambda x: x[1])[:beam_width])
+            beam_list = sorted(candidates_list, key=lambda x: x[1])[:beam_width]
 
             # Check for completion of sequences
-            final_sequences_set.update(completed_sequences_set)
+            if len(completed_sequences_list)>0:
+                final_sequences_list.append(completed_sequences_list)
 
-            print("Beam search candidates:")
-            print(beam)
-            print("Completed sequences:")
-            print(completed_sequences_set)
-            print("Final sequences:")
-            print(final_sequences_set)
-
-            if final_sequences_set:
-                final_sequences_set = set(sorted(final_sequences_set, key=lambda x: x[1]))
-                best_seq = final_sequences_set.pop()[0]
-
-                # Extract and print all final sequences
-                all_sequences = [self.sequence_to_text(np.array([seq[0]])) for seq in final_sequences_set]
-                print("All Final Sequences:")
-                for seq in all_sequences:
-                    print(seq)
+            if final_sequences_list:
+                final_sequences_list = sorted(final_sequences_list, key=lambda x: x[1])
+                best_seq = final_sequences_list.pop()[0]
             else:
-                # Choose the best sequence from the last beam
-                best_seq = beam.pop()[0]
+                best_seq = beam_list.pop()[0]
 
             # Decode the best sequence into text
             response_text = self.sequence_to_text(np.array([best_seq]))
-
-            print("Best sequence:")
-            print(response_text)
 
         return response_text

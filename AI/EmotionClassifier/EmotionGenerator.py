@@ -9,6 +9,7 @@ class EmotionGenerator:
         self.EMOTION_TUPLE = (EmotionStates.Neutral, 0.0)  # (emotion, intensity)
         self.DECAY_RATE = 0.2
         self.MAX_INTENSITY = 1.0
+        self.personality_modifier = self.get_personality_modifier()
 
         self.initialize_emotion(environment)
 
@@ -16,7 +17,7 @@ class EmotionGenerator:
         emotional_perception = self.EMOTION_CLASSIFIER_MODEL.predict(environment)  
         emotional_perception_tuple = (emotional_perception, 0.8)
         # print("\nEmotional perception of env = ", emotional_perception_tuple)
-        personality_modifier = self.get_personality_modifier()
+        personality_modifier = self.personality_modifier
         self.EMOTION_TUPLE = self.weight_emotion(emotional_perception_tuple, personality_modifier)
         # print("\nInitial emotion tuple = ", self.EMOTION_TUPLE)
 
@@ -24,8 +25,8 @@ class EmotionGenerator:
         emotional_perception = self.EMOTION_CLASSIFIER_MODEL.predict(chat_text)
         emotional_perception_tuple = (emotional_perception, 0.5)
         # print("\nEmotional perception of people = ", emotional_perception_tuple)
-        personality_modifier = self.get_personality_modifier()
-        weighted_emotional_perception = self.weight_emotion(emotional_perception_tuple, personality_modifier)
+        # personality_modifier = self.personality_modifier
+        weighted_emotional_perception = self.weight_emotion(emotional_perception_tuple)
         self.EMOTION_TUPLE = self.decay_emotion(self.EMOTION_TUPLE)
         self.EMOTION_TUPLE = self.combine_emotions(self.EMOTION_TUPLE, weighted_emotional_perception)
         # print("\nUpdated emotion tuple = ", self.EMOTION_TUPLE)
@@ -101,7 +102,7 @@ class EmotionGenerator:
 
         return combined_emotion_tuple
 
-    def weight_emotion(self, emotion_tuple: Tuple[EmotionStates, float], personality_modifier) -> Tuple[EmotionStates, float]:
+    def weight_emotion(self, emotion_tuple: Tuple[EmotionStates, float]) -> Tuple[EmotionStates, float]:
         emotion_type = emotion_tuple[0]
         intensity = emotion_tuple[1]
 
@@ -118,7 +119,7 @@ class EmotionGenerator:
         combined_weight = max(0.0, min(openness_weight + agreeableness_weight + neuroticism_weight, self.MAX_INTENSITY))
 
         # Apply weight to intensity and personality modifier
-        weighted_intensity = intensity + (combined_weight * personality_modifier)
+        weighted_intensity = intensity + (combined_weight * self.personality_modifier)
 
         # Clamp weighted intensity between 0 and MAX_INTENSITY
         weighted_intensity = max(0.0, min(weighted_intensity, self.MAX_INTENSITY))
