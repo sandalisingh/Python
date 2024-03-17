@@ -197,7 +197,7 @@ class DialogueGenerator:
 
         for i in range(1, self.MAX_SEQ_LENGTH):
             # Predict the next token
-            _, predicted_state = self.MODEL.predict([chat_text_input, emotion_input, prev_seq])
+            _, predicted_state = self.MODEL.predict([chat_text_input, emotion_input, prev_seq], verbose=0)
             
             # Get the token index with the highest probability (greedy approach)
             predicted_token_index = np.argmax(predicted_state[0, :])
@@ -239,7 +239,7 @@ class DialogueGenerator:
             for prev_seq, score in beam_list:
 
                 # Predict the next token probabilities
-                _, predicted_state = self.MODEL.predict([chat_text_input, emotion_input, prev_seq])
+                _, predicted_state = self.MODEL.predict([chat_text_input, emotion_input, prev_seq], verbose=0)
 
                 # Get the top tokens with their probabilities
                 top_token_indices = np.argsort(predicted_state[0])[-beam_width:]
