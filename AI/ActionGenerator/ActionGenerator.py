@@ -58,7 +58,7 @@ class ActionGenerator:
         table.add_row(row)
 
         # Print the formatted Q-table
-        table.title = title + f" ({PersonalityIndex.get_personality(personality)}) ({EmotionStates.get_emotion(emotion_index)})"
+        table.title = title + f" ({PersonalityIndex.get_personality(personality)}) ({EmotionStates.index_to_enum(emotion_index)})"
         print(table)  
 
     #   ACTION GENERATION

@@ -9,7 +9,8 @@ dialogue_generator = DialogueGenerator()
 
 # Train the model
 # dialogue_generator.model_visualization()
-dialogue_generator.create_train_and_save_model()
+# dialogue_generator.train_model()
+dialogue_generator.test_model()
 
 # Inspection
 # dialogue_generator.inspect_layer_outputs()

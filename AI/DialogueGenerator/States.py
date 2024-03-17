@@ -5,6 +5,7 @@ from termcolor import colored
 def logging(level, message):
     if level == 'info':
         print(colored("\nINFO : "+message+"\n", "yellow"))  # Logging info in yellow
+        return
     elif level == 'error':
         print(colored("\nERROR : "+message+"\n", "red"))     # Logging error in red
 
@@ -21,17 +22,18 @@ class ActionStates(Enum):
     Helping = 9
 
     @staticmethod
-    def get_action(index):
-        for action in ActionStates:
-            if action.value == index:
-                return action.name
+    def index_to_enum(index:int):
+        try:
+            return ActionStates(index)
+        except Exception as e:
+            logging("error", str(e))
         return None
 
     @staticmethod
-    def get_action_index(action_name):
+    def string_to_index(action_string:str):
         try:
-            action_name = str(action_name).strip().capitalize()
-            return ActionStates[action_name].value
+            action_string = str(action_string).strip().capitalize()
+            return ActionStates[action_string].value
         except Exception as e:
             logging("error", str(e))
             return None
@@ -66,7 +68,7 @@ class Range(Enum):
             return 0
         elif index in Range.Medium.value:
             return 1
-        elif index in Range.High.value:
+        elif index in Range.High.value or index is 10:
             return 2
 
     @staticmethod
@@ -109,52 +111,62 @@ class EmotionStates(Enum):
     Neutral = 27
 
     @staticmethod
-    def get_emotion(index):
-        for emotion in EmotionStates:
-            if emotion.value == index:
-                return emotion.name
+    def index_to_enum(index:int):
+        try:
+            return EmotionStates(index)
+        except Exception as e:
+            logging("error", str(e))
         return None
 
     @staticmethod
-    def get_emotion_index(emotion_name):
+    def string_to_index(emotion_string:str):
         try:
-            emotion_name = str(emotion_name).strip().capitalize()
-            return EmotionStates[emotion_name].value
+            emotion_string = str(emotion_string).strip().capitalize()
+            return EmotionStates[emotion_string].value
         except Exception as e:
             logging("error", str(e))
-            return None
+        return None
+
+    @staticmethod
+    def string_to_enum(emotion_string:str):
+        try:
+            emotion_string = str(emotion_string).strip().capitalize()
+            return EmotionStates(EmotionStates.string_to_index(emotion_string))
+        except Exception as e:
+            logging("error", str(e))
+        return None
 
     @staticmethod
     def get_emoji(emotion):
         emojis = {
-            EmotionStates.Admiration: '😊',
-            EmotionStates.Amusement: '😄',
-            EmotionStates.Anger: '😠',
-            EmotionStates.Annoyance: '😒',
-            EmotionStates.Approval: '👍',
-            EmotionStates.Caring: '❤️',
-            EmotionStates.Confusion: '😕',
+            EmotionStates.Admiration: '🤗',
+            EmotionStates.Amusement: '🥳',
+            EmotionStates.Anger: '😡',
+            EmotionStates.Annoyance: '😑',
+            EmotionStates.Approval: '🙂',
+            EmotionStates.Caring: '😊',
+            EmotionStates.Confusion: '😶',
             EmotionStates.Curiosity: '🤔',
-            EmotionStates.Desire: '😏',
-            EmotionStates.Disappointment: '😞',
-            EmotionStates.Disapproval: '👎',
+            EmotionStates.Desire: '🤤',
+            EmotionStates.Disappointment: '😕',
+            EmotionStates.Disapproval: '🫤',
             EmotionStates.Disgust: '🤢',
-            EmotionStates.Embarrassment: '😳',
-            EmotionStates.Excitement: '😃',
+            EmotionStates.Embarrassment: '🫣',
+            EmotionStates.Excitement: '🤪',
             EmotionStates.Fear: '😨',
-            EmotionStates.Gratitude: '🙏',
-            EmotionStates.Grief: '😢',
-            EmotionStates.Joy: '😂',
+            EmotionStates.Gratitude: '🤩',
+            EmotionStates.Grief: '😔',
+            EmotionStates.Joy: '🥰',
             EmotionStates.Love: '😍',
-            EmotionStates.Nervousness: '😰',
-            EmotionStates.Optimism: '😊',
-            EmotionStates.Pride: '🦁',
-            EmotionStates.Realization: '😮',
-            EmotionStates.Relief: '😅',
+            EmotionStates.Nervousness: '😬',
+            EmotionStates.Optimism: '😇',
+            EmotionStates.Pride: '😎',
+            EmotionStates.Realization: '😲',
+            EmotionStates.Relief: '😌',
             EmotionStates.Remorse: '😔',
-            EmotionStates.Sadness: '😢',
-            EmotionStates.Surprise: '😲',
-            EmotionStates.Neutral: '😐',
+            EmotionStates.Sadness: '😭',
+            EmotionStates.Surprise: '😳',
+            EmotionStates.Neutral: '😀',
         }
         return emojis.get(emotion, '')
 

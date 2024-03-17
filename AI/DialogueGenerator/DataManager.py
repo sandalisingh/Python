@@ -69,7 +69,7 @@ class DataManager:
         output_seq[:, -1] = 0
 
         # Map emotion strings to their corresponding enum values
-        emotion = [EmotionStates.get_emotion_index(emo) for emo in emotion] 
+        emotion = [EmotionStates.string_to_index(emo) for emo in emotion] 
         DataVisualizer.display_top_rows(pd.DataFrame({'chat_text' : chat_text.tolist(), 'emotion' : emotion, 'text_response' : text_response.tolist()}), 1, "Emotion to index")
 
         # convert list to vector

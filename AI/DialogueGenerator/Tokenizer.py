@@ -29,7 +29,7 @@ class Tokenizer():
             print("Texts concatenated.\n")
 
             # Create tokenizer and fit on all texts
-            self.TOKENIZER = tf.keras.preprocessing.text.Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>')
+            self.TOKENIZER = tf.keras.preprocessing.text.Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>', filters='')
             self.TOKENIZER.fit_on_texts(all_texts)
             self.TOKENIZER.word_index['<start>'] = self.TOKENIZER.num_words + 1
             self.TOKENIZER.word_index['<end>'] = self.TOKENIZER.num_words + 2

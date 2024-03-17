@@ -75,12 +75,27 @@ class DataVisualizer:
         plt.show()
 
     @staticmethod
-    def plot_loss_and_accuracy(loss, accuracy, title='Model Training History', file_name='training_history.png'):
-        plt.plot(loss, label='Loss')
-        plt.plot(accuracy, label='Accuracy')
+    def plot_train_history(history, part_name, title):
+        plt.figure(figsize=(12, 6))
+        key_loss = f'{part_name}_loss'
+        key_accuracy = f'{part_name}_accuracy'
+        
+        # Plot loss
+        plt.subplot(1, 2, 1)
+        plt.plot(history[key_loss], label=key_loss)
+        plt.title(f'{title} : {part_name} : Loss')
         plt.xlabel('Epoch')
-        plt.ylabel('Value')
-        plt.title(title)
+        plt.ylabel('Loss')
         plt.legend()
-        plt.savefig(file_name)
-        plt.close()
+
+        # Plot accuracy
+        plt.subplot(1, 2, 2)
+        plt.plot(history[key_accuracy], label=key_accuracy)
+        plt.title(f'{title} : {part_name} : Accuracy')
+        plt.xlabel('Epoch')
+        plt.ylabel('Accuracy')
+        plt.legend()
+
+        plt.tight_layout()
+        plt.savefig(f'Plots/{part_name}_metrics.png')
+        plt.show()

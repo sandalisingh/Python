@@ -102,10 +102,10 @@ class DialogueGenerator:
 
     def model_visualization(self):
         DataVisualizer.get_model_summary(self.MODEL)
-        DataVisualizer.get_arch_flowchat(self.MODEL, "model_graph_plot.png")
+        DataVisualizer.get_arch_flowchat(self.MODEL, "Plots/model_graph_plot.png")
 
     def inspect_layer_outputs(self):
-        chat_text, text_response, emotion = DataManager.prepare_data("Conversation3.csv")
+        chat_text, text_response, emotion = DataManager.prepare_data("Datasets/Conversation3.csv")
         
         # Enable eager execution
         tf.config.run_functions_eagerly(True)  
@@ -142,39 +142,37 @@ class DialogueGenerator:
             # DataVisualizer.visualize_tensor_value_range(i, layer_name, result[0])
 
     #   TRAINING
+    
+    def test_model(self):
+        chat_text, text_response, emotion = DataManager.prepare_data("Datasets/Conversation3.csv")
+        
+        # Preprocess data
+        chat_text_input, emotion_input, prev_seq, output_seq, output_state = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
 
-    def evaluate_model(self, chat_text, emotion, prev_seq, output_seq, output_state):
-        loss, dense_of_seq_loss, dense_of_state_loss, dense_of_seq_accuracy, dense_of_state_accuracy = self.MODEL.evaluate([chat_text, emotion, prev_seq], [output_seq, output_state])
+        loss, dense_of_seq_loss, dense_of_state_loss, dense_of_seq_accuracy, dense_of_state_accuracy = self.MODEL.evaluate([chat_text_input, emotion_input, prev_seq], [output_seq, output_state])
         logging("info", f"Model Evaluation\n\tloss: {loss}\n\tdense_of_seq_loss: {dense_of_seq_loss}\n\tdense_of_state_loss: {dense_of_state_loss}\n\tdense_of_seq_accuracy: {dense_of_seq_accuracy}\n\tdense_of_state_accuracy: {dense_of_state_accuracy}")
-        return loss, dense_of_seq_loss, dense_of_state_loss, dense_of_seq_accuracy, dense_of_state_accuracy
 
-    def train_model(self, chat_text_input, emotion_input, prev_seq, output_seq, output_state, batch_size, epochs):
+    def train_model(self):
+        chat_text, text_response, emotion = DataManager.prepare_data("Datasets/Conversation3.csv")
+        
+        # Preprocess data
+        chat_text_input, emotion_input, prev_seq, output_seq, output_state = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
+
+        # Train the model
         self.MODEL.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
         
         # Define validation split for evaluation during training
         validation_split = 0.2  # 20% of training data for validation
 
         # Train the model with validation split
-        history = self.MODEL.fit([chat_text_input, emotion_input, prev_seq], [output_seq, output_state], 
-        batch_size=batch_size, epochs=epochs, validation_split=validation_split)
+        history = self.MODEL.fit([chat_text_input, emotion_input, prev_seq], [output_seq, output_state], batch_size=64, epochs=10, validation_split=validation_split)
 
-        logging("info", "Model trained.")
-    
-    def create_train_and_save_model(self):
-        chat_text, text_response, emotion = DataManager.prepare_data("Conversation3.csv")
-        
-        # Preprocess data
-        chat_text_input, emotion_input, prev_seq, output_seq, output_state = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
+        DataVisualizer.plot_train_history(history.history, 'dense_of_seq', 'Model Training')
+        DataVisualizer.plot_train_history(history.history, 'val_dense_of_seq', 'Model Validation')
+        DataVisualizer.plot_train_history(history.history, 'dense_of_state', 'Model Training')
+        DataVisualizer.plot_train_history(history.history, 'val_dense_of_state', 'Model Validation')
 
-        # Train the model
-        self.train_model(chat_text_input, emotion_input, prev_seq, output_seq, output_state, batch_size=64, epochs=1)       
-
-        # Evaluate the model
-        loss, dense_of_seq_loss, dense_of_state_loss, dense_of_seq_accuracy, dense_of_state_accuracy = self.evaluate_model(chat_text_input, emotion_input, prev_seq, output_seq, output_state)    
-
-        # Plot and save the training history
-        DataVisualizer.plot_loss_and_accuracy(dense_of_seq_loss, dense_of_seq_accuracy, 'Model evaluation: output sequence', 'evaluation_of_output_seq')
-        DataVisualizer.plot_loss_and_accuracy(dense_of_state_loss, dense_of_state_accuracy, 'Model evaluation: output states', 'evaluation_of_output_states')
+        logging("info", "Model trained.")    
 
         self.save_model()
 
@@ -204,7 +202,7 @@ class DialogueGenerator:
             
             # Get the token index with the highest probability (greedy approach)
             predicted_token_index = np.argmax(predicted_state[0, :])
-            print("TOKEN = ", predicted_token_index)
+            # print("TOKEN = ", predicted_token_index)
             
             # Update the previous sequence tensor
             updated_value = tf.constant(predicted_token_index, dtype=tf.int32)
@@ -214,7 +212,7 @@ class DialogueGenerator:
             if predicted_token_index == self.TOKENIZER.END_TOKEN:
                 break
             
-        response_text = self.sequence_to_text(prev_seq)
+        response_text = self.sequence_to_text(tf.expand_dims(prev_seq, axis=0))
 
         logging("info", "Response generated")
         
