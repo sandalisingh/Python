@@ -28,6 +28,7 @@ class SequenceAnalyzer:
         
         return num_unique_tokens, responsiveness
 
+    @staticmethod
     def calculate_score(candidate, input_text, tokenizer_length, weight_diversity=0.5, weight_responsiveness=0.5):
         input_text = input_text[input_text != 0]
 
