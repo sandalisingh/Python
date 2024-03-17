@@ -44,13 +44,13 @@ class ActionGenerator:
             logging("info", "Initialized new Q-table.")
 
     def print_q_table(self, q_table, emotion_index, prev_action_index, personality=None, title="Q table"):
-        action_names = [ActionStates.get_action(i) for i in range(self.no_of_action_states)]
+        action_names = [ActionStates.index_to_enum(i).name for i in range(self.no_of_action_states)]
         headers = ["Prev Action"] + list(action_names)
 
         table = PrettyTable(headers)
         table.maxwidth = 80
 
-        prev_action_name = ActionStates.get_action(prev_action_index)
+        prev_action_name = ActionStates.index_to_enum(prev_action_index).name
         
         # Round Q-values and create row
         rounded_q_values = [round(val, 2) for val in q_table]  # Round to 2 decimal places
@@ -88,9 +88,7 @@ class ActionGenerator:
 
             # Select action state
             final_action_state_index = np.argmax(q_val_array)
-            print("\nFinal action state index = ", final_action_state_index)
 
-        print("\n")
         return final_action_state_index
 
     #   REINFORCEMENT LEARNING
@@ -122,7 +120,7 @@ class ActionGenerator:
         }
 
         # Check if the current and next actions correspond to a defined transition
-        transition_key = (ActionStates[ActionStates.get_action(current_action)], ActionStates[ActionStates.get_action(next_action)])
+        transition_key = (ActionStates.index_to_enum(current_action), ActionStates.index_to_enum(next_action))
         if transition_key in transitions:
             transition_reward = transitions[transition_key]
 
@@ -170,7 +168,7 @@ class ActionGenerator:
         # Check if next_action is one of the preferred actions for each personality trait
         for trait, preferences in personality_preferences.items():
             index = Range.index_to_range_key(personality_vector[trait])
-            if ActionStates[ActionStates.get_action(next_action)] in preferences[index]:
+            if ActionStates.index_to_enum(next_action) in preferences[index]:
                 preference_reward += 1
 
         print("Preference Reward = ", preference_reward)
@@ -206,7 +204,7 @@ class ActionGenerator:
         # Define current and next states
         print("\nPersonality Vector:", personality_vector)
         print("Current State:", current_state)
-        print("Next Action State:", ActionStates.get_action(next_action_state))
+        print("Next Action State:", ActionStates.index_to_enum(next_action_state).name)
 
         # Execute action and observe reward
         reward = self.calculate_reward(personality_vector, current_state[1].value, next_action_state)

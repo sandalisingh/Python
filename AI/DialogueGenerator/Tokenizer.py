@@ -4,7 +4,7 @@ from States import logging
 
 class Tokenizer():
 
-    def __init__(self, vocab_size):
+    def __init__(self, vocab_size=10000):
         self.TOKENIZER = None
         self.TOKENIZER_NAME = "tokenizer.pkl"
         self.VOCAB_SIZE = vocab_size
@@ -22,12 +22,12 @@ class Tokenizer():
             logging("error", str(e))
             self.TOKENIZER = None
 
-    def create_tokenizer(self, chat_text, text_response):
-        if self.TOKENIZER is None:
-            # Concatenate chat_text and text_response
-            all_texts = chat_text + text_response
-            print("Texts concatenated.\n")
+    def fit_tokenizer(self, chat_text, text_response):
+        # Concatenate chat_text and text_response
+        all_texts = chat_text + text_response
+        print("Texts concatenated.\n")
 
+        if self.TOKENIZER is None:
             # Create tokenizer and fit on all texts
             self.TOKENIZER = tf.keras.preprocessing.text.Tokenizer(num_words=self.VOCAB_SIZE - 3, oov_token='<OOV>', filters='')
             self.TOKENIZER.fit_on_texts(all_texts)
@@ -39,8 +39,11 @@ class Tokenizer():
             self.TOKENIZER.index_word[self.TOKENIZER.word_index['<end>']] = '<end>'
             
             logging("info", "Tokenizer created.")
+        else:
+            self.TOKENIZER.fit_on_texts(all_texts)
+            logging("info", "Tokenizer fitted on new data.")
             
-            self.save_tokenizer()
+        self.save_tokenizer()
         print("Tokenizer size = ", self.VOCAB_SIZE)
         # self.print_tokenizer()
 
@@ -60,4 +63,9 @@ class Tokenizer():
 
             print("}")
 
+    def length(self):
+        if self.TOKENIZER is not None and self.TOKENIZER.word_index:
+            return len(self.TOKENIZER.word_index) + 1 
+        else:
+            return 0
     

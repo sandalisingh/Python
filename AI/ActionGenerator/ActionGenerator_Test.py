@@ -18,8 +18,7 @@ while(True):
 
     # Call action_generator
     action_index = action_gen.action_generator(personality_vector, emotional_state, previous_action_state)
-    print("\n\n-> Generated Action : ", ActionStates.get_action(action_index))
-    print("\n\n")
+    print("-> Generated Action : ", ActionStates.index_to_enum(action_index).name)
 
     # Call q_learning
     action_gen.q_learning(personality_vector, current_state, action_index)

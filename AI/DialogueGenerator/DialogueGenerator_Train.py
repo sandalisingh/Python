@@ -9,8 +9,8 @@ dialogue_generator = DialogueGenerator()
 
 # Train the model
 # dialogue_generator.model_visualization()
-# dialogue_generator.train_model()
-dialogue_generator.test_model()
+dialogue_generator.train_model('Datasets/Conversation_org.csv')
+dialogue_generator.test_model('Datasets/Conversation_org.csv')
 
 # Inspection
 # dialogue_generator.inspect_layer_outputs()

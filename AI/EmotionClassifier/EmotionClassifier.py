@@ -96,4 +96,4 @@ class EmotionClassifier:
             
     def predict(self, text):
         predicted_emotion = self.MODEL.predict([text])[0]
-        return EmotionStates.string_to_enum(predicted_emotion)
+        return EmotionStates.string_to_enum(predicted_emotion).name

@@ -38,7 +38,7 @@ class DataManager:
         DataVisualizer.display_top_rows(pd.DataFrame({'chat_text' : chat_text, 'emotion' : emotion, 'text_response' : text_response}), 1, "Padding punctuation marks")
 
         tokenizer = Tokenizer(VOCAB_SIZE)
-        tokenizer.create_tokenizer(chat_text, text_response)
+        tokenizer.fit_tokenizer(chat_text, text_response)
 
         chat_text = tokenizer.TOKENIZER.texts_to_sequences(chat_text)
         text_response = tokenizer.TOKENIZER.texts_to_sequences(text_response)

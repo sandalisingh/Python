@@ -12,6 +12,7 @@ from PositionalEncoding import PositionalEncoding
 from DataManager import DataManager
 from DataVisualizer import DataVisualizer
 from Tokenizer import Tokenizer
+from SequenceAnalyzer import SequenceAnalyzer
 
 class DialogueGenerator:
 
@@ -104,8 +105,8 @@ class DialogueGenerator:
         DataVisualizer.get_model_summary(self.MODEL)
         DataVisualizer.get_arch_flowchat(self.MODEL, "Plots/model_graph_plot.png")
 
-    def inspect_layer_outputs(self):
-        chat_text, text_response, emotion = DataManager.prepare_data("Datasets/Conversation3.csv")
+    def inspect_layer_outputs(self, dataset_filename):
+        chat_text, text_response, emotion = DataManager.prepare_data(dataset_filename)
         
         # Enable eager execution
         tf.config.run_functions_eagerly(True)  
@@ -143,8 +144,8 @@ class DialogueGenerator:
 
     #   TRAINING
     
-    def test_model(self):
-        chat_text, text_response, emotion = DataManager.prepare_data("Datasets/Conversation3.csv")
+    def test_model(self, dataset_filename):
+        chat_text, text_response, emotion = DataManager.prepare_data(dataset_filename)
         
         # Preprocess data
         chat_text_input, emotion_input, prev_seq, output_seq, output_state = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
@@ -152,8 +153,8 @@ class DialogueGenerator:
         loss, dense_of_seq_loss, dense_of_state_loss, dense_of_seq_accuracy, dense_of_state_accuracy = self.MODEL.evaluate([chat_text_input, emotion_input, prev_seq], [output_seq, output_state])
         logging("info", f"Model Evaluation\n\tloss: {loss}\n\tdense_of_seq_loss: {dense_of_seq_loss}\n\tdense_of_state_loss: {dense_of_state_loss}\n\tdense_of_seq_accuracy: {dense_of_seq_accuracy}\n\tdense_of_state_accuracy: {dense_of_state_accuracy}")
 
-    def train_model(self):
-        chat_text, text_response, emotion = DataManager.prepare_data("Datasets/Conversation3.csv")
+    def train_model(self, dataset_filename):
+        chat_text, text_response, emotion = DataManager.prepare_data(dataset_filename)
         
         # Preprocess data
         chat_text_input, emotion_input, prev_seq, output_seq, output_state = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
@@ -189,8 +190,6 @@ class DialogueGenerator:
         return response_text
 
     def generate_response_with_greedy_approach(self, chat_text_str, emotion_str):
-        print("\n\n-> GENERATE RESPONSE")
-
         chat_text_input, emotion_input, prev_seq, _, _ = DataManager.preprocess_data([chat_text_str], [""], [emotion_str], self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
         prev_seq = tf.tensor_scatter_nd_update(prev_seq, indices=[[0, 1]], updates=[0])
 
@@ -219,6 +218,8 @@ class DialogueGenerator:
         return response_text 
 
     def generate_response_with_beam_search(self, chat_text_str, emotion_str, beam_width=5):
+        tokenizer_length = self.TOKENIZER.length()
+
         # Preprocess data 
         chat_text_input, emotion_input, prev_seq, _, _ = DataManager.preprocess_data([chat_text_str], [""], [emotion_str], self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
         prev_seq = tf.tensor_scatter_nd_update(prev_seq, indices=[[0, 1]], updates=[0])
@@ -226,7 +227,7 @@ class DialogueGenerator:
         DataVisualizer.print_tensor_dict("Input to model", {"chat_text": chat_text_input, "emotion": emotion_input, "prev_seq": prev_seq})
 
         # Initialize beam search set
-        beam_list = [(prev_seq, 0)]
+        beam_list = [(prev_seq, 1.0)]
 
         # Initialize the final generated sequences
         final_sequences_list = []
@@ -254,8 +255,18 @@ class DialogueGenerator:
                     # Insert the token at the correct position
                     candidate_seq[0, next_token_position] = token_index
 
-                    # Calculate the score for the candidate sequence
-                    candidate_score = score - np.log(predicted_state[0, token_index])
+                    # # Calculate the score for the candidate sequence
+                    # candidate_score = score - np.log(predicted_state[0, token_index])       # negative likelyhood
+
+                    # # Add penalty if the current token is equal to the previous token
+                    # if next_token_position > 0 and candidate_seq[0, next_token_position] == candidate_seq[0, next_token_position - 1]:
+                    #     penalty = -15  # You can adjust the penalty factor as needed
+                    #     candidate_score += penalty
+
+                    # # Normalize score by dividing by the length of the sequence raised to a power
+                    # length_factor = 0.7  # You can adjust this factor as needed
+                    # candidate_score /= len(candidate_seq[0])**length_factor
+                    candidate_score = score * SequenceAnalyzer.calculate_score(candidate_seq[0], chat_text_input[0].numpy(), tokenizer_length)
 
                     # Check if the sequence is complete
                     if token_index == self.TOKENIZER.END_TOKEN:
