@@ -98,4 +98,4 @@ class DataVisualizer:
 
         plt.tight_layout()
         plt.savefig(f'Plots/{part_name}_metrics.png')
-        plt.show()
+        # plt.show()

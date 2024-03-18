@@ -13,6 +13,7 @@ from DataManager import DataManager
 from DataVisualizer import DataVisualizer
 from Tokenizer import Tokenizer
 from SequenceAnalyzer import SequenceAnalyzer
+from sklearn.model_selection import train_test_split
 
 class DialogueGenerator:
 
@@ -144,18 +145,14 @@ class DialogueGenerator:
 
     #   TRAINING
     
-    def test_model(self, dataset_filename):
-        chat_text, text_response, emotion = DataManager.prepare_data(dataset_filename)
-        
+    def test_model(self, chat_text, text_response, emotion):
         # Preprocess data
         chat_text_input, emotion_input, prev_seq, output_seq, output_state = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
 
         loss, dense_of_seq_loss, dense_of_state_loss, dense_of_seq_accuracy, dense_of_state_accuracy = self.MODEL.evaluate([chat_text_input, emotion_input, prev_seq], [output_seq, output_state])
-        logging("info", f"Model Evaluation\n\tloss: {loss}\n\tdense_of_seq_loss: {dense_of_seq_loss}\n\tdense_of_state_loss: {dense_of_state_loss}\n\tdense_of_seq_accuracy: {dense_of_seq_accuracy}\n\tdense_of_state_accuracy: {dense_of_state_accuracy}")
+        logging("info", f"Model Tested.\n\tloss: {loss}\n\tdense_of_seq_loss: {dense_of_seq_loss}\n\tdense_of_state_loss: {dense_of_state_loss}\n\tdense_of_seq_accuracy: {dense_of_seq_accuracy}\n\tdense_of_state_accuracy: {dense_of_state_accuracy}")
 
-    def train_model(self, dataset_filename):
-        chat_text, text_response, emotion = DataManager.prepare_data(dataset_filename)
-        
+    def train_model(self, chat_text, text_response, emotion, epochs):
         # Preprocess data
         chat_text_input, emotion_input, prev_seq, output_seq, output_state = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
 
@@ -166,7 +163,7 @@ class DialogueGenerator:
         validation_split = 0.2  # 20% of training data for validation
 
         # Train the model with validation split
-        history = self.MODEL.fit([chat_text_input, emotion_input, prev_seq], [output_seq, output_state], batch_size=64, epochs=10, validation_split=validation_split)
+        history = self.MODEL.fit([chat_text_input, emotion_input, prev_seq], [output_seq, output_state], batch_size=64, epochs=epochs, validation_split=validation_split)
 
         DataVisualizer.plot_train_history(history.history, 'dense_of_seq', 'Model Training')
         DataVisualizer.plot_train_history(history.history, 'val_dense_of_seq', 'Model Validation')
@@ -174,6 +171,16 @@ class DialogueGenerator:
         DataVisualizer.plot_train_history(history.history, 'val_dense_of_state', 'Model Validation')
 
         logging("info", "Model trained.")    
+
+        self.save_model()
+
+    def train_and_test(self, dataset_filename, epochs=10, test_size=0.2, random_state=42):
+        chat_text, text_response, emotion = DataManager.prepare_data(dataset_filename)
+
+        chat_train, chat_test, response_train, response_test, emotion_train, emotion_test = train_test_split(chat_text, text_response, emotion, test_size=test_size, random_state=random_state)
+
+        self.train_model(chat_train, response_train, emotion_train, epochs)
+        self.test_model(chat_test, response_test, emotion_test)
 
         self.save_model()
 
@@ -218,8 +225,6 @@ class DialogueGenerator:
         return response_text 
 
     def generate_response_with_beam_search(self, chat_text_str, emotion_str, beam_width=5):
-        tokenizer_length = self.TOKENIZER.length()
-
         # Preprocess data 
         chat_text_input, emotion_input, prev_seq, _, _ = DataManager.preprocess_data([chat_text_str], [""], [emotion_str], self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
         prev_seq = tf.tensor_scatter_nd_update(prev_seq, indices=[[0, 1]], updates=[0])
@@ -266,7 +271,7 @@ class DialogueGenerator:
                     # # Normalize score by dividing by the length of the sequence raised to a power
                     # length_factor = 0.7  # You can adjust this factor as needed
                     # candidate_score /= len(candidate_seq[0])**length_factor
-                    candidate_score = score * SequenceAnalyzer.calculate_score(candidate_seq[0], chat_text_input[0].numpy(), tokenizer_length, predicted_state[0, token_index])
+                    candidate_score = score + SequenceAnalyzer.calculate_score(candidate_seq[0], chat_text_input[0].numpy(), i+2, predicted_state[0, token_index])
 
                     # Check if the sequence is complete
                     if token_index == self.TOKENIZER.END_TOKEN:
