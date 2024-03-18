@@ -25,7 +25,7 @@ class Tokenizer():
     def fit_tokenizer(self, chat_text, text_response):
         # Concatenate chat_text and text_response
         all_texts = chat_text + text_response
-        print("Texts concatenated.\n")
+        # print("Texts concatenated.\n")
 
         if self.TOKENIZER is None:
             # Create tokenizer and fit on all texts
@@ -44,7 +44,7 @@ class Tokenizer():
             logging("info", "Tokenizer fitted on new data.")
             
         self.save_tokenizer()
-        print("Tokenizer size = ", self.VOCAB_SIZE)
+        # print("Tokenizer size = ", self.VOCAB_SIZE)
         # self.print_tokenizer()
 
     def save_tokenizer(self):

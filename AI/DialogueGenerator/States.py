@@ -4,7 +4,7 @@ from termcolor import colored
 
 def logging(level, message):
     if level == 'info':
-        print(colored("\nINFO : "+message+"\n", "yellow"))  # Logging info in yellow
+        # print(colored("\nINFO : "+message+"\n", "yellow"))  # Logging info in yellow
         return
     elif level == 'error':
         print(colored("\nERROR : "+message+"\n", "red"))     # Logging error in red
@@ -68,7 +68,7 @@ class Range(Enum):
             return 0
         elif index in Range.Medium.value:
             return 1
-        elif index in Range.High.value or index is 10:
+        elif index in Range.High.value or (index == 10):
             return 2
 
     @staticmethod

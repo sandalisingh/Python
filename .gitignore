@@ -30,3 +30,7 @@ __pycache__/
 AI/ActionGenerator/my_env
 AI/EmotionClassifier/my_env
 /AI/DialogueGenerator/logs
+AI/DialogueGenerator/Datasets
+AI/DialogueGenerator/Plots
+AI/ActionGenerator/Action_Q_Table.npy
+AI/EmotionGenerator/my_env

@@ -193,7 +193,7 @@ class DialogueGenerator:
         chat_text_input, emotion_input, prev_seq, _, _ = DataManager.preprocess_data([chat_text_str], [""], [emotion_str], self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
         prev_seq = tf.tensor_scatter_nd_update(prev_seq, indices=[[0, 1]], updates=[0])
 
-        DataVisualizer.print_tensor_dict("Input to model", {"chat_text": chat_text_input, "emotion": emotion_input, "prev_seq": prev_seq})
+        # DataVisualizer.print_tensor_dict("Input to model", {"chat_text": chat_text_input, "emotion": emotion_input, "prev_seq": prev_seq})
 
         for i in range(1, self.MAX_SEQ_LENGTH):
             # Predict the next token
@@ -224,7 +224,7 @@ class DialogueGenerator:
         chat_text_input, emotion_input, prev_seq, _, _ = DataManager.preprocess_data([chat_text_str], [""], [emotion_str], self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
         prev_seq = tf.tensor_scatter_nd_update(prev_seq, indices=[[0, 1]], updates=[0])
 
-        DataVisualizer.print_tensor_dict("Input to model", {"chat_text": chat_text_input, "emotion": emotion_input, "prev_seq": prev_seq})
+        # DataVisualizer.print_tensor_dict("Input to model", {"chat_text": chat_text_input, "emotion": emotion_input, "prev_seq": prev_seq})
 
         # Initialize beam search set
         beam_list = [(prev_seq, 1.0)]
@@ -266,7 +266,7 @@ class DialogueGenerator:
                     # # Normalize score by dividing by the length of the sequence raised to a power
                     # length_factor = 0.7  # You can adjust this factor as needed
                     # candidate_score /= len(candidate_seq[0])**length_factor
-                    candidate_score = score * SequenceAnalyzer.calculate_score(candidate_seq[0], chat_text_input[0].numpy(), tokenizer_length)
+                    candidate_score = score * SequenceAnalyzer.calculate_score(candidate_seq[0], chat_text_input[0].numpy(), tokenizer_length, predicted_state[0, token_index])
 
                     # Check if the sequence is complete
                     if token_index == self.TOKENIZER.END_TOKEN:
@@ -274,20 +274,20 @@ class DialogueGenerator:
                     else:
                         candidates_list.append((candidate_seq, candidate_score))
 
-            # Select top candidates to continue beam search
-            beam_list = sorted(candidates_list, key=lambda x: x[1])[:beam_width]
+            # Select candidates with highest scores - sorted in asc order
+            beam_list = sorted(candidates_list, key=lambda x: x[1])[-beam_width:]
 
             # Check for completion of sequences
             if len(completed_sequences_list)>0:
                 final_sequences_list.append(completed_sequences_list)
 
             if final_sequences_list:
-                final_sequences_list = sorted(final_sequences_list, key=lambda x: x[1])
-                best_seq = final_sequences_list.pop()[0]
+                final_sequences_list = sorted(final_sequences_list, key=lambda x: x[1]) # asc order
+                best_seq = final_sequences_list[-1][0]   # highest score is the last row
             else:
-                best_seq = beam_list.pop()[0]
+                best_seq = beam_list[-1][0]  # highest score is the last row
 
-            # Decode the best sequence into text
-            response_text = self.sequence_to_text(np.array([best_seq]))
+        # Decode the best sequence into text
+        response_text = self.sequence_to_text(np.array([best_seq]))
 
         return response_text

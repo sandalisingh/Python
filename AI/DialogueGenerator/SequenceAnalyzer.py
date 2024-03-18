@@ -29,12 +29,16 @@ class SequenceAnalyzer:
         return num_unique_tokens, responsiveness
 
     @staticmethod
-    def calculate_score(candidate, input_text, tokenizer_length, weight_diversity=0.5, weight_responsiveness=0.5):
+    def calculate_score(candidate, input_text, tokenizer_length, probability, weight_diversity=0.5, weight_responsiveness=0.5, weight_probability=0.5):
         input_text = input_text[input_text != 0]
 
         num_unique_tokens, responsiveness = SequenceAnalyzer.calculate_metrics(candidate, input_text, tokenizer_length)
         
         # Calculate combined score using weighted sum
-        score = (weight_diversity * num_unique_tokens) + (weight_responsiveness * responsiveness)
+        combined_score = (weight_diversity * num_unique_tokens) + (weight_responsiveness * responsiveness) + (weight_probability * probability)
         
-        return score
+        # Normalize the combined score
+        max_score = weight_diversity + weight_responsiveness + weight_probability
+        normalized_score = combined_score / max_score
+        
+        return combined_score
