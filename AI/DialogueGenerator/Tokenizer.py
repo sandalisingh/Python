@@ -64,10 +64,13 @@ class Tokenizer():
         logging("info", "Tokenizer saved at "+self.TOKENIZER_NAME)
         return tokenizer_file
     
-    def print_tokenizer(self):
+    def print_tokenizer(self, length=10000):
         if self.TOKENIZER is not None:
             print("Tokens = {")
             for i, (word, index) in enumerate(self.TOKENIZER.word_index.items()):
+                if i>=length:
+                    break
+
                 # Formatting each token and index pair
                 token_format = f'({index}, \'{word}\')'
                 print(token_format + ", ", end="")

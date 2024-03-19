@@ -4,7 +4,7 @@ from termcolor import colored
 
 def logging(level, message):
     if level == 'info':
-        print(colored("\nINFO : "+message+"\n", "yellow"))  # Logging info in yellow
+        # print(colored("\nINFO : "+message+"\n", "yellow"))  # Logging info in yellow
         return
     elif level == 'error':
         print(colored("\nERROR : "+message+"\n", "red"))     # Logging error in red
