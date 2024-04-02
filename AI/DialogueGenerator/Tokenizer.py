@@ -31,10 +31,10 @@ class Tokenizer():
 
     def filter_tokens_by_vocab_size(self):
         # Filter tokens in word index
-        self.TOKENIZER.word_index = {word: index for word, index in self.TOKENIZER.word_index.items() if index < self.VOCAB_SIZE}
+        self.TOKENIZER.word_index = {word: index for word, index in self.TOKENIZER.word_index.items() if index < self.VOCAB_SIZE-2}
         
         # Filter tokens in index word
-        self.TOKENIZER.index_word = {index: word for index, word in self.TOKENIZER.index_word.items() if index < self.VOCAB_SIZE}
+        self.TOKENIZER.index_word = {index: word for index, word in self.TOKENIZER.index_word.items() if index < self.VOCAB_SIZE-2}
 
     def fit_tokenizer(self, chat_text, text_response):
         # Concatenate chat_text and text_response

@@ -2,7 +2,7 @@ class SequenceAnalyzer:
     @staticmethod
     def calculate_diversity(tokens, seq_lt):
         unique_tokens = set(tokens)
-        num_unique_tokens = len(unique_tokens)
+        num_unique_tokens = len(unique_tokens)-1
         
         normalized_unique_tokens = num_unique_tokens / seq_lt
         
@@ -30,7 +30,8 @@ class SequenceAnalyzer:
 
     @staticmethod
     def calculate_score(candidate, input_text, seq_length, probability, weight_diversity=0.5, weight_responsiveness=0.5, weight_probability=0.5):
-        input_text = input_text[input_text != 0]
+        input_text = set(input_text)
+        candidate = set(candidate)
 
         num_unique_tokens, responsiveness = SequenceAnalyzer.calculate_metrics(candidate, input_text, seq_length)
         

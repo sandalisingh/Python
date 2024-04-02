@@ -11,8 +11,6 @@ personality_vector = [6, 4, 8, 5, 7]
 while(True):
     emotional_state = EmotionStates[input("Emotion state : ")]
     previous_action_state = ActionStates[input("Previous action state : ")]
-    emotional_state = EmotionStates["Joy"]
-    previous_action_state = ActionStates["Attacking"]
     print(f"Current state: (Emotion state = {emotional_state}, Action state = {previous_action_state})")
     current_state = (emotional_state, previous_action_state)
 

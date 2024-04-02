@@ -16,7 +16,7 @@ class ActionGenerator:
 
         # Parameters
         self.alpha = 0.1  # Learning rate
-        self.gamma = 0.9  # Discount factor
+        self.gamma = 0.6  # Discount factor
         self.epsilon = 0.3  # Exploration rate
 
     #   Q TABLE
