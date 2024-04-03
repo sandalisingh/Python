@@ -12,7 +12,6 @@ from PositionalEncoding import PositionalEncoding
 from DataManager import DataManager
 from DataVisualizer import DataVisualizer
 from Tokenizer import Tokenizer
-from SequenceAnalyzer import SequenceAnalyzer
 from sklearn.model_selection import train_test_split
 
 class DialogueGenerator:
@@ -204,10 +203,10 @@ class DialogueGenerator:
 
         for i in range(1, self.MAX_SEQ_LENGTH):
             # Predict the next token
-            _, predicted_state = self.MODEL.predict([chat_text_input, emotion_input, prev_seq], verbose=0)
+            predicted_seq, predicted_state = self.MODEL.predict([chat_text_input, emotion_input, prev_seq], verbose=0)
             
             # Get the token index with the highest probability (greedy approach)
-            predicted_token_index = np.argmax(predicted_state[0, :])
+            predicted_token_index = np.argmax(predicted_state[0, 1:])
             # print("TOKEN = ", predicted_token_index)
             
             # Update the previous sequence tensor
@@ -260,18 +259,7 @@ class DialogueGenerator:
                     # Insert the token at the correct position
                     candidate_seq[0, next_token_position] = token_index
 
-                    # # Calculate the score for the candidate sequence
-                    # candidate_score = score - np.log(predicted_state[0, token_index])       # negative likelyhood
-
-                    # # Add penalty if the current token is equal to the previous token
-                    # if next_token_position > 0 and candidate_seq[0, next_token_position] == candidate_seq[0, next_token_position - 1]:
-                    #     penalty = -15  # You can adjust the penalty factor as needed
-                    #     candidate_score += penalty
-
-                    # # Normalize score by dividing by the length of the sequence raised to a power
-                    # length_factor = 0.7  # You can adjust this factor as needed
-                    # candidate_score /= len(candidate_seq[0])**length_factor
-                    candidate_score = score + SequenceAnalyzer.calculate_score(candidate_seq[0], chat_text_input[0].numpy(), i+2, predicted_state[0, token_index])
+                    candidate_score = self.calculate_score(candidate_seq[0], chat_text_input[0].numpy(), i+1, score)
 
                     # Check if the sequence is complete
                     if token_index == self.TOKENIZER.END_TOKEN:
@@ -296,3 +284,46 @@ class DialogueGenerator:
         response_text = self.sequence_to_text(np.array([best_seq]))
 
         return response_text
+
+    def calculate_score(self, gen_sequence, input_text, seq_len, prev_score, diversity_weight=0.4, length_penalty_weight=0.4, responsiveness_weight=0.2, trigram_penalty=0.6):
+        # Calculate diversity score
+        unique_tokens = len(set(gen_sequence))
+        n_grams = len(set(zip(*[gen_sequence[i:] for i in range(3)])))  # Consider trigrams for diversity
+        diversity_score = (unique_tokens + n_grams) / (seq_len+1)  # Normalize diversity score
+
+        # # Check for trigrams penalty
+        # trigram_penalty_score = trigram_penalty if any(gen_sequence[i] == gen_sequence[i+1] == gen_sequence[i+2] for i in range(len(gen_sequence) - 2)) else 0
+        
+        # Calculate length penalty
+        if seq_len < 4:
+            length_penalty = seq_len / 4
+        elif seq_len > 20:
+            length_penalty = 20 / seq_len
+        else:
+            length_penalty = 1
+        
+        # Calculate responsiveness
+        responsiveness = 0
+        input_tokens = set(input_text)
+        generated_tokens = set(gen_sequence)
+        common_tokens = len(input_tokens.intersection(generated_tokens))
+        responsiveness = common_tokens / max(len(input_tokens), 1)
+        
+        # Normalize scores
+        diversity_score = round(diversity_score, 4)
+        length_penalty = round(length_penalty, 4)
+        responsiveness = round(responsiveness, 4)
+        
+        final_score = (diversity_weight*diversity_score + length_penalty_weight*length_penalty + responsiveness_weight*responsiveness)
+        # final_score = final_score - trigram_penalty_score
+        
+        # Ensure final score is between 0 and 1
+        final_score = max(0, min(final_score, 1))
+        
+        # Normalize score considering previous score
+        normalized_score = final_score + (prev_score - final_score) * 0.1
+        
+        # Round normalized score to 4 decimal places
+        normalized_score = round(normalized_score, 4)
+        
+        return normalized_score
