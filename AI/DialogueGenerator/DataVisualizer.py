@@ -75,27 +75,25 @@ class DataVisualizer:
         plt.show()
 
     @staticmethod
-    def plot_train_history(history, part_name, title):
+    def plot_train_history(history, part_name_1, part_name_2, title):
         plt.figure(figsize=(12, 6))
-        key_loss = f'{part_name}_loss'
-        key_accuracy = f'{part_name}_accuracy'
         
         # Plot loss
         plt.subplot(1, 2, 1)
-        plt.plot(history[key_loss], label=key_loss)
-        plt.title(f'{title} : {part_name} : Loss')
+        plt.plot(history[part_name_1], label=part_name_1, color='red')
+        plt.title(f'{title} : {part_name_1}')
         plt.xlabel('Epoch')
-        plt.ylabel('Loss')
+        plt.ylabel(part_name_1)
         plt.legend()
 
         # Plot accuracy
         plt.subplot(1, 2, 2)
-        plt.plot(history[key_accuracy], label=key_accuracy)
-        plt.title(f'{title} : {part_name} : Accuracy')
+        plt.plot(history[part_name_2], label=part_name_2, color='blue')
+        plt.title(f'{title} : {part_name_2}')
         plt.xlabel('Epoch')
-        plt.ylabel('Accuracy')
+        plt.ylabel(part_name_2)
         plt.legend()
 
         plt.tight_layout()
-        plt.savefig(f'Plots/{part_name}_metrics.png')
+        plt.savefig(f'Plots/{title}_metrics.png')
         # plt.show()

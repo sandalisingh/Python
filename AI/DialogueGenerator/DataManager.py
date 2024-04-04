@@ -82,11 +82,10 @@ class DataManager:
         emotion = tf.convert_to_tensor(emotion, dtype=tf.float32)
         text_response = tf.convert_to_tensor(text_response, dtype=tf.float32)
         output_seq = tf.convert_to_tensor(output_seq, dtype=tf.float32)
-        output_state = output_seq[:, -1]  # extract last row
 
         # DataVisualizer.print_tensor_dict("Model definition: Inputs and Outputs", {'chat_text_input' : chat_text, 'emotion_input' : emotion, 'prev_seq_input' : text_response, 'output_seq' : output_seq, 'output_state': output_state})
         
-        return chat_text, emotion, text_response, output_seq, output_state
+        return chat_text, emotion, text_response, output_seq
 
     @staticmethod
     def pad_punctuation(text):
