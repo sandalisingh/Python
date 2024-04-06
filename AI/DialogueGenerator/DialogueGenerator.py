@@ -74,16 +74,18 @@ class DialogueGenerator:
         attention_output = Attention(name='self_attention_to_prev_seq')([positional_output, positional_output])
         residual_of_prev_seq = Add(name='residual_connection_of_prev_seq')([positional_output, attention_output])
 
-        # handle emotion
-        emotion = Input(shape=(1,), name='emotion_input')
-        emotion_embedding = Embedding(len(list(EmotionStates)), self.EMBEDDING_DIM, name='embedding_of_emotion')(emotion)
-
         # multiple lstm
         _, lstm_chat_text_hidden_state, lstm_chat_text_cell_state = LSTM(self.HIDDEN_DIM, return_sequences=False, return_state=True, name='lstm_of_chat_text')(processed_chat_text, initial_state=[summary_hidden_state, summary_cell_state])
-        _, lstm_emotion_hidden_state, lstm_emotion_cell_state = LSTM(self.HIDDEN_DIM, return_sequences=False, return_state=True, name='lstm_of_emotion')(emotion_embedding, initial_state=[lstm_chat_text_hidden_state, lstm_chat_text_cell_state])
-        lstm_seq, _, lstm_state = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=True, name='lstm_of_prev_seq')(residual_of_prev_seq, initial_state=[lstm_emotion_hidden_state, lstm_emotion_cell_state])
+        lstm_seq = LSTM(self.HIDDEN_DIM, return_sequences=True, return_state=False, name='lstm_of_prev_seq')(residual_of_prev_seq, initial_state=[lstm_chat_text_hidden_state, lstm_chat_text_cell_state])
 
-        dense_of_seq = Dense(self.VOCAB_SIZE, name='dense_of_seq', activation='softmax')(lstm_seq)
+        # handle emotion
+        emotion = Input(shape=(1,), name='emotion_input')
+        repeated_emotion = RepeatVector(self.MAX_SEQ_LENGTH, name='repeat_emotion')(emotion)
+
+        # Concatenate the emotion input with the LSTM output
+        concatenated_output = Concatenate(axis=-1, name='concatenated_output')([lstm_seq, repeated_emotion])
+
+        dense_of_seq = Dense(self.VOCAB_SIZE, name='dense_of_seq', activation='softmax')(concatenated_output)
 
         return emotion, prev_seq, dense_of_seq
 
@@ -173,7 +175,7 @@ class DialogueGenerator:
     def train_and_test(self, dataset_filename, epochs=10, test_size=0.2, random_state=42):
         chat_text, text_response, emotion = DataManager.prepare_data(dataset_filename)
 
-        chat_train, chat_test, response_train, response_test, emotion_train, emotion_test = train_test_split(chat_text, text_response, emotion, test_size=test_size, random_state=random_state)
+        chat_train, chat_test, response_train, response_test, emotion_train, emotion_test = train_test_split(chat_text, text_response, emotion, test_size=test_size, random_state=random_state, shuffle=False)
 
         self.train_model(chat_train, response_train, emotion_train, epochs)
         self.test_model(chat_test, response_test, emotion_test)
@@ -183,8 +185,13 @@ class DialogueGenerator:
     #   GENERTE RESPONSE
 
     def sequence_to_text(self, seq):
+        seq = tf.reshape(seq[:,:,1:], (-1,))
+
+        # Remove <OOV> and <start>
+        seq = [x for x in seq if (x!=1 and x!=9998)]
+
         # Convert the sequence of token indices to text
-        response_tokens = [self.TOKENIZER.TOKENIZER.index_word.get(idx.numpy(), "") for idx in tf.reshape(seq[:,:,1:], (-1,))]
+        response_tokens = [self.TOKENIZER.TOKENIZER.index_word.get(idx.numpy(), "") for idx in seq]
         response_tokens = [token for token in response_tokens if token!=""]
 
         # Remove tokens after <end> token
@@ -203,7 +210,7 @@ class DialogueGenerator:
             predicted_seq = self.MODEL.predict([chat_text_input, emotion_input, prev_seq], verbose=0)
 
             # Get the token index with the highest probability (greedy approach)
-            predicted_token_index = np.argmax(predicted_seq[0, i-1, 1:])
+            predicted_token_index = np.argmax(predicted_seq[0, i-1, 2:])
 
             if predicted_token_index==1:    # skip <OOV>
                 continue
@@ -241,11 +248,10 @@ class DialogueGenerator:
             completed_sequences_list = []
             for prev_seq, score in beam_list:
                 # Predict the next token probabilities
-                predicted_seq, predicted_state = self.MODEL.predict([chat_text_input, emotion_input, prev_seq], verbose=0)
+                predicted_seq = self.MODEL.predict([chat_text_input, emotion_input, prev_seq], verbose=0)
 
                 # Get the top tokens with their probabilities
-                top_token_indices = np.argsort(predicted_seq[0])[-beam_width:]
-                top_token_indices = top_token_indices[top_token_indices != 0]
+                top_token_indices = np.argsort(predicted_seq[0, i-1, 2:])[-beam_width:]
 
                 for token_index in top_token_indices:
                     # Create a candidate sequence
