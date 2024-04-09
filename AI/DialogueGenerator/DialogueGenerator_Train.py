@@ -6,7 +6,7 @@ dialogue_generator = DialogueGenerator()
 # Train the model
 # dialogue_generator.model_visualization()
 
-dialogue_generator.train_and_test('Datasets/Conversation_org.csv', 50)
+dialogue_generator.train_and_test('Datasets/Manual.csv', 20)
 # print("--------------------------Conversation - Done------------------------------")
 
 # dialogue_generator.train_and_test('Datasets/Dataset_69K_Kaggle_1.csv', 5)

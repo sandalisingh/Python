@@ -191,16 +191,16 @@ class DialogueGenerator:
         self.MODEL.compile(optimizer=Adam(learning_rate=0.001), loss='sparse_categorical_crossentropy', metrics=['accuracy']) 
         
         # Define validation split for evaluation during training
-        validation_split = 0.2  # 20% of training data for validation
+        # validation_split = 0.2  # 20% of training data for validation
 
         # Define early stopping based on validation loss and validation accuracy
-        early_stopping_loss = EarlyStopping(monitor='val_loss', patience=5, mode='min', restore_best_weights=True)
+        # early_stopping_loss = EarlyStopping(monitor='val_loss', patience=5, mode='min', restore_best_weights=True)
 
         # Train the model with validation split
-        history = self.MODEL.fit([chat_text_input, emotion_input, prev_seq], output_seq, batch_size=64, epochs=epochs, validation_split=validation_split, callbacks=[early_stopping_loss])
+        history = self.MODEL.fit([chat_text_input, emotion_input, prev_seq], output_seq, batch_size=64, epochs=epochs)
 
         DataVisualizer.plot_train_history(history.history, 'loss', 'accuracy', 'Model_Training')
-        DataVisualizer.plot_train_history(history.history, 'val_loss', 'val_accuracy', 'Model_Validation')
+        # DataVisualizer.plot_train_history(history.history, 'val_loss', 'val_accuracy', 'Model_Validation')
 
         logging("info", "Model trained.")    
 
