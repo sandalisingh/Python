@@ -64,7 +64,7 @@ class DialogueGenerator:
         
         attention_output = MultiHeadAttention(num_heads=8, key_dim=self.EMBEDDING_DIM, value_dim=self.EMBEDDING_DIM, name='self_attention_to_chat_text')(positional_output, positional_output)
         residual_output = Add(name='residual_connection_of_chat_text')([positional_output, attention_output])
-        residual_output = Dropout(0.2)(residual_output) 
+        residual_output = Dropout(0.2, name='dropout_from_chat_text')(residual_output) 
         normalised_output = LayerNormalization(name='normalization_of_chat_text')(residual_output)
         _, hidden_state, cell_state = LSTM(self.HIDDEN_DIM, return_sequences=False, return_state=True, name='summarization_of_chat_text')(normalised_output)
 
@@ -97,7 +97,7 @@ class DialogueGenerator:
 
         # Concatenate context vector with LSTM output
         concatenated_output = Concatenate(name='seq_and_emotion')([lstm_seq, emotion_embedding]) # bs,50,1024
-        concatenated_output = Dropout(0.2)(concatenated_output)
+        concatenated_output = Dropout(0.2, name='dropout_from_conc')(concatenated_output)
         dense_of_seq = Dense(self.VOCAB_SIZE, name='dense_of_seq', activation='softmax')(concatenated_output)
 
         return emotion, prev_seq, dense_of_seq
@@ -112,8 +112,8 @@ class DialogueGenerator:
             # embedding_layer.kernel_regularizer = regularizers.l2(0.01)  
 
             # Emotion embedding with L2 regularization
-            emotion_embedding_layer = self.MODEL.layers[-2]  # Access the emotion embedding layer
-            emotion_embedding_layer.kernel_regularizer = regularizers.l2(0.01)
+            # emotion_embedding_layer = self.MODEL.layers[-2]  # Access the emotion embedding layer
+            # emotion_embedding_layer.kernel_regularizer = regularizers.l2(0.01)
 
             self.model_visualization()
             
