@@ -2,7 +2,7 @@ import pandas as pd
 from EmotionClassifier import EmotionClassifier
 
 # Load the dataset
-dataset_path = "Dataset/new_2.csv"
+dataset_path = "Dataset/Synthetic-Persona-Chat_valid.csv"
 data = pd.read_csv(dataset_path)
 
 # Keep only the necessary column and rename it
@@ -50,7 +50,7 @@ data['emotion'] = data['text_response'].apply(predict_emotion)
 data = data[['chat_text', 'emotion', 'text_response']]
 
 # Save the modified dataset
-data.to_csv('Dataset/persona_dataset_training_processed.csv', index=False)
+data.to_csv('Dataset/Synthetic-Persona-Chat_valid.csv', index=False)
 
 print("Dataset saved successfully.")
 print("\nCounts for each emotion:")

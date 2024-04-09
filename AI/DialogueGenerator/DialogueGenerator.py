@@ -172,7 +172,8 @@ class DialogueGenerator:
 
     #   TRAINING
     
-    def test_model(self, chat_text, text_response, emotion):
+    def test_model(self, dataset_test_filename):
+        chat_text, text_response, emotion = DataManager.prepare_data(dataset_test_filename)
         # Preprocess data
         chat_text_input, emotion_input, prev_seq, output_seq = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
 
@@ -181,9 +182,13 @@ class DialogueGenerator:
         loss, accuracy = self.MODEL.evaluate([chat_text_input, emotion_input, prev_seq], output_seq)
         logging("info", f"Model Tested: \t[Loss={loss}, Accuracy={accuracy}]")
 
-    def train_model(self, chat_text, text_response, emotion, epochs):
+    def train_model(self, dataset_train_filename, dataset_valid_filename, epochs):
+        chat_text_train, text_response_train, emotion_train = DataManager.prepare_data(dataset_train_filename)
+        chat_text_valid, text_response_valid, emotion_valid = DataManager.prepare_data(dataset_valid_filename)
+        
         # Preprocess data
-        chat_text_input, emotion_input, prev_seq, output_seq = DataManager.preprocess_data(chat_text, text_response, emotion, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
+        chat_text_train, emotion_train, prev_seq_train, output_seq_train = DataManager.preprocess_data(chat_text_train, text_response_train, emotion_train, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
+        chat_text_valid, emotion_valid, prev_seq_valid, output_seq_valid = DataManager.preprocess_data(chat_text_valid, text_response_valid, emotion_valid, self.VOCAB_SIZE, self.MAX_SEQ_LENGTH)
 
         self.reset_states()
 
@@ -194,25 +199,21 @@ class DialogueGenerator:
         # validation_split = 0.2  # 20% of training data for validation
 
         # Define early stopping based on validation loss and validation accuracy
-        # early_stopping_loss = EarlyStopping(monitor='val_loss', patience=5, mode='min', restore_best_weights=True)
+        early_stopping_loss = EarlyStopping(monitor='val_loss', patience=5, mode='min', restore_best_weights=True)
 
         # Train the model with validation split
-        history = self.MODEL.fit([chat_text_input, emotion_input, prev_seq], output_seq, batch_size=64, epochs=epochs)
+        history = self.MODEL.fit([chat_text_train, emotion_train, prev_seq_train], output_seq_train, batch_size=64, epochs=epochs, validation_data=([chat_text_valid, emotion_valid, prev_seq_valid], output_seq_valid), callbacks=[early_stopping_loss])
 
         DataVisualizer.plot_train_history(history.history, 'loss', 'accuracy', 'Model_Training')
-        # DataVisualizer.plot_train_history(history.history, 'val_loss', 'val_accuracy', 'Model_Validation')
+        DataVisualizer.plot_train_history(history.history, 'val_loss', 'val_accuracy', 'Model_Validation')
 
         logging("info", "Model trained.")    
 
         self.save_model()
 
-    def train_and_test(self, dataset_filename, epochs=10, test_size=0.2, random_state=42):
-        chat_text, text_response, emotion = DataManager.prepare_data(dataset_filename)
-
-        chat_train, chat_test, response_train, response_test, emotion_train, emotion_test = train_test_split(chat_text, text_response, emotion, test_size=test_size, random_state=random_state, shuffle=False)
-
-        self.train_model(chat_train, response_train, emotion_train, epochs)
-        self.test_model(chat_test, response_test, emotion_test)
+    def train_and_test(self, dataset_train_filename, dataset_valid_filename, dataset_test_filename, epochs=10, test_size=0.2, random_state=42):
+        self.train_model(dataset_train_filename, dataset_valid_filename, epochs)
+        self.test_model(dataset_test_filename)
 
         self.save_model()
 

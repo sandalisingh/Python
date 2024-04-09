@@ -2,7 +2,7 @@ import csv
 import pandas as pd
 
 # Assuming your CSV file is named 'dataset.csv', change this to the appropriate path if necessary
-csv_file_path = 'Dataset/new.csv'
+csv_file_path = 'Dataset/Synthetic-Persona-Chat_train.csv'
 df = pd.DataFrame(columns=['chat_text', 'text_response'])
 
 # Open the CSV file
@@ -12,9 +12,9 @@ with open(csv_file_path, 'r') as file:
     
     # Loop over each row in the CSV file
     for row in csv_reader:
-        print(row)  
+        # print(row)  
         lines = row[0].strip().split('\n')
-        print(lines)
+        # print(lines)
 
         user1 = ''
         user2 = ''
@@ -31,5 +31,5 @@ with open(csv_file_path, 'r') as file:
                     user1 = ''
                     user2 = ''
 
-    df.to_csv('Dataset/new_2.csv', index=False)
+    df.to_csv('Dataset/Synthetic-Persona-Chat_train.csv', index=False)
 
