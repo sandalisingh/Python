@@ -18,6 +18,7 @@ from Tokenizer import Tokenizer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 import string
+from sklearn.utils.class_weight import compute_class_weight
 
 class DialogueGenerator:
 
@@ -201,8 +202,16 @@ class DialogueGenerator:
         # Define early stopping based on validation loss and validation accuracy
         early_stopping_loss = EarlyStopping(monitor='val_loss', patience=5, mode='min', restore_best_weights=True)
 
+        # Calculate class weights to handle class imbalance
+        class_weights = compute_class_weight('balanced', np.unique(emotion_train), emotion_train)
+        class_weights_dict = dict(enumerate(class_weights))
+
         # Train the model with validation split
-        history = self.MODEL.fit([chat_text_train, emotion_train, prev_seq_train], output_seq_train, batch_size=64, epochs=epochs, validation_data=([chat_text_valid, emotion_valid, prev_seq_valid], output_seq_valid), callbacks=[early_stopping_loss])
+        history = self.MODEL.fit([chat_text_train, emotion_train, prev_seq_train], output_seq_train, 
+                                    batch_size=64, epochs=epochs, 
+                                    validation_data=([chat_text_valid, emotion_valid, prev_seq_valid], output_seq_valid), 
+                                    callbacks=[early_stopping_loss], 
+                                    class_weight=class_weights_dict)
 
         DataVisualizer.plot_train_history(history.history, 'loss', 'accuracy', 'Model_Training')
         DataVisualizer.plot_train_history(history.history, 'val_loss', 'val_accuracy', 'Model_Validation')
